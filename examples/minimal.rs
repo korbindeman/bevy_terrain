@@ -50,7 +50,7 @@ fn setup(
     let terrain = commands
         .spawn((
             TerrainBundle::new(tile_atlas),
-            materials.add(DebugTerrainMaterial::default()),
+            MeshMaterial3d(materials.add(DebugTerrainMaterial::default())),
         ))
         .id();
 
@@ -58,13 +58,12 @@ fn setup(
 
     tile_trees.insert((terrain, view), tile_tree);
 
-    commands.spawn(PbrBundle {
-        mesh: meshes.add(Cuboid::from_length(10.0)),
-        transform: Transform::from_translation(Vec3::new(
+    commands.spawn((
+        Mesh3d(meshes.add(Cuboid::from_length(10.0))),
+        Transform::from_translation(Vec3::new(
             TERRAIN_SIZE as f32 / 2.0,
             100.0,
             TERRAIN_SIZE as f32 / 2.0,
         )),
-        ..default()
-    });
+    ));
 }
