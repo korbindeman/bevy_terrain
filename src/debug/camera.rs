@@ -5,9 +5,12 @@ use crate::big_space::{
 
 use bevy::{input::mouse::MouseMotion, math::DVec3, prelude::*};
 
+/// Bundle of components needed to spawn a debug camera.
 #[derive(Bundle)]
 pub struct DebugCameraBundle {
-    pub camera: Camera3dBundle,
+    pub camera: Camera3d,
+    pub projection: Projection,
+    pub transform: Transform,
     pub controller: DebugCameraController,
     #[cfg(feature = "high_precision")]
     pub cell: GridCell,
@@ -19,6 +22,11 @@ impl Default for DebugCameraBundle {
     fn default() -> Self {
         Self {
             camera: default(),
+            projection: Projection::Perspective(PerspectiveProjection {
+                near: 0.000001,
+                ..default()
+            }),
+            transform: default(),
             controller: default(),
             #[cfg(feature = "high_precision")]
             cell: default(),
@@ -34,15 +42,7 @@ impl DebugCameraBundle {
         let (cell, translation) = frame.translation_to_grid(position);
 
         Self {
-            camera: Camera3dBundle {
-                transform: Transform::from_translation(translation).looking_to(Vec3::X, Vec3::Y),
-                projection: PerspectiveProjection {
-                    near: 0.000001,
-                    ..default()
-                }
-                .into(),
-                ..default()
-            },
+            transform: Transform::from_translation(translation).looking_to(Vec3::X, Vec3::Y),
             cell,
             controller: DebugCameraController {
                 translation_speed: speed,
@@ -55,15 +55,7 @@ impl DebugCameraBundle {
     #[cfg(not(feature = "high_precision"))]
     pub fn new(position: Vec3, speed: f64) -> Self {
         Self {
-            camera: Camera3dBundle {
-                transform: Transform::from_translation(position).looking_to(Vec3::X, Vec3::Y),
-                projection: PerspectiveProjection {
-                    near: 0.000001,
-                    ..default()
-                }
-                .into(),
-                ..default()
-            },
+            transform: Transform::from_translation(position).looking_to(Vec3::X, Vec3::Y),
             controller: DebugCameraController {
                 translation_speed: speed,
                 ..default()
@@ -106,7 +98,7 @@ pub fn camera_controller(
     #[cfg(feature = "high_precision")] frames: ReferenceFrames,
     time: Res<Time>,
     keyboard: Res<ButtonInput<KeyCode>>,
-    mut mouse_move: EventReader<MouseMotion>,
+    mut mouse_move: MessageReader<MouseMotion>,
     #[cfg(feature = "high_precision")] mut camera: Query<(
         Entity,
         GridTransform,
@@ -118,19 +110,24 @@ pub fn camera_controller(
     )>,
 ) {
     #[cfg(feature = "high_precision")]
-    let (
+    let Ok((
         camera,
         GridTransformItem {
             mut transform,
             mut cell,
         },
         mut controller,
-    ) = camera.single_mut();
+    )) = camera.single_mut()
+    else {
+        return;
+    };
     #[cfg(feature = "high_precision")]
     let frame = frames.parent_frame(camera).unwrap();
 
     #[cfg(not(feature = "high_precision"))]
-    let (mut transform, mut controller) = camera.single_mut();
+    let Ok((mut transform, mut controller)) = camera.single_mut() else {
+        return;
+    };
 
     keyboard
         .just_pressed(KeyCode::KeyT)
@@ -167,7 +164,7 @@ pub fn camera_controller(
 
     translation_direction = transform.rotation.as_dquat() * translation_direction;
 
-    let dt = time.delta_seconds_f64();
+    let dt = time.delta_secs_f64();
     let lerp_translation = 1.0 - controller.translational_smoothness.clamp(0.0, 0.999);
     let lerp_rotation = 1.0 - controller.rotational_smoothness.clamp(0.0, 0.999);
 

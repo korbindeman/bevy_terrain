@@ -7,7 +7,9 @@ use crate::{
     math::TerrainModel,
     terrain_data::{tile_atlas::TileAtlas, AttachmentConfig},
 };
-use bevy::{ecs::entity::EntityHashMap, prelude::*, render::view::NoFrustumCulling};
+use bevy::{
+    camera::visibility::NoFrustumCulling, ecs::entity::EntityHashMap, prelude::*,
+};
 
 /// Resource that stores components that are associated to a terrain entity.
 /// This is used to persist components in the render world.
@@ -58,20 +60,21 @@ impl TerrainConfig {
 /// The components of a terrain.
 ///
 /// Does not include loader(s) and a material.
+///
+/// In Bevy 0.18 `Visibility` requires `InheritedVisibility` and `ViewVisibility`
+/// via required components, so we no longer list those explicitly.
 #[derive(Bundle)]
 pub struct TerrainBundle {
     pub tile_atlas: TileAtlas,
     #[cfg(feature = "high_precision")]
     pub cell: GridCell,
     pub transform: Transform,
-    pub global_transform: GlobalTransform,
-    pub visibility_bundle: VisibilityBundle,
+    pub visibility: Visibility,
     pub no_frustum_culling: NoFrustumCulling,
 }
 
 impl TerrainBundle {
     /// Creates a new terrain bundle from the config.
-
     pub fn new(
         tile_atlas: TileAtlas,
         #[cfg(feature = "high_precision")] frame: &ReferenceFrame,
@@ -86,12 +89,7 @@ impl TerrainBundle {
             transform,
             #[cfg(feature = "high_precision")]
             cell,
-            global_transform: default(),
-            visibility_bundle: VisibilityBundle {
-                visibility: Visibility::Visible,
-                inherited_visibility: default(),
-                view_visibility: default(),
-            },
+            visibility: Visibility::Visible,
             no_frustum_culling: NoFrustumCulling,
         }
     }

@@ -17,7 +17,7 @@ use bevy::{
         render_graph::{self, RenderGraph, RenderLabel},
         render_resource::*,
         renderer::{RenderContext, RenderDevice},
-        Render, RenderApp, RenderSet,
+        Render, RenderApp, RenderSystems,
     },
 };
 
@@ -101,39 +101,19 @@ impl FromWorld for TerrainPreprocessPipelines {
 impl SpecializedComputePipeline for TerrainPreprocessPipelines {
     type Key = TerrainPreprocessPipelineKey;
 
-    fn specialize(&self, key: Self::Key) -> ComputePipelineDescriptor {
-        let mut layout = default();
-        let mut shader = default();
-        let mut entry_point = default();
-
-        let shader_defs = vec![];
-
-        if key.contains(TerrainPreprocessPipelineKey::SPLIT) {
-            layout = vec![self.attachment_layout.clone(), self.split_layout.clone()];
-            shader = self.split_shader.clone();
-            entry_point = "split".into();
-        }
-        if key.contains(TerrainPreprocessPipelineKey::STITCH) {
-            layout = vec![self.attachment_layout.clone(), self.stitch_layout.clone()];
-            shader = self.stitch_shader.clone();
-            entry_point = "stitch".into();
-        }
-        if key.contains(TerrainPreprocessPipelineKey::DOWNSAMPLE) {
-            layout = vec![
-                self.attachment_layout.clone(),
-                self.downsample_layout.clone(),
-            ];
-            shader = self.downsample_shader.clone();
-            entry_point = "downsample".into();
-        }
-
+    fn specialize(&self, _key: Self::Key) -> ComputePipelineDescriptor {
+        // TODO(bevy 0.18 migration): pipeline `layout` is now `Vec<BindGroupLayoutDescriptor>`
+        // and `entry_point` is `Option<Cow<'static, str>>`. The bind group layout fields here are
+        // owned `BindGroupLayout` handles, so they need to be replaced with descriptors (or looked
+        // up via `pipeline_cache.get_bind_group_layout`) before this can be re-enabled.
         ComputePipelineDescriptor {
             label: Some("terrain_preprocess_pipeline".into()),
-            layout,
+            layout: default(),
             push_constant_ranges: default(),
-            shader,
-            shader_defs,
-            entry_point,
+            shader: default(),
+            shader_defs: vec![],
+            entry_point: None,
+            zero_initialize_workgroup_memory: false,
         }
     }
 }
@@ -272,9 +252,9 @@ impl Plugin for TerrainPreprocessPlugin {
             .add_systems(
                 Render,
                 (
-                    queue_terrain_preprocess.in_set(RenderSet::Queue),
+                    queue_terrain_preprocess.in_set(RenderSystems::Queue),
                     GpuPreprocessor::prepare
-                        .in_set(RenderSet::PrepareAssets)
+                        .in_set(RenderSystems::PrepareAssets)
                         .before(GpuTileAtlas::prepare),
                 ),
             );

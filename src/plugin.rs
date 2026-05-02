@@ -18,13 +18,11 @@ use crate::{
     terrain_view::TerrainViewComponents,
 };
 use bevy::{
+    camera::visibility::{check_visibility, VisibilitySystems},
     prelude::*,
     render::{
-        graph::CameraDriverLabel,
-        render_graph::RenderGraph,
-        render_resource::*,
-        view::{check_visibility, VisibilitySystems},
-        Render, RenderApp, RenderSet,
+        graph::CameraDriverLabel, render_graph::RenderGraph, render_resource::*, Render, RenderApp,
+        RenderSystems,
     },
 };
 
@@ -41,7 +39,11 @@ impl Plugin for TerrainPlugin {
             .init_resource::<TerrainViewComponents<TerrainModelApproximation>>()
             .add_systems(
                 PostUpdate,
-                check_visibility::<With<TileAtlas>>.in_set(VisibilitySystems::CheckVisibility),
+                // TODO(bevy 0.18 migration): `check_visibility` is no longer generic on a query
+                // filter. Bevy 0.18 runs visibility checks per render-marker component; the
+                // terrain entity should use one of the existing markers (e.g. `RenderMesh`) or
+                // a custom marker registered via `app.register_required_components`.
+                check_visibility.in_set(VisibilitySystems::CheckVisibility),
             )
             .add_systems(
                 Last,
@@ -85,11 +87,11 @@ impl Plugin for TerrainPlugin {
                         TerrainViewData::prepare,
                         CullingBindGroup::prepare,
                     )
-                        .in_set(RenderSet::Prepare),
-                    queue_tiling_prepass.in_set(RenderSet::Queue),
+                        .in_set(RenderSystems::Prepare),
+                    queue_tiling_prepass.in_set(RenderSystems::Queue),
                     GpuTileAtlas::cleanup
                         .before(World::clear_entities)
-                        .in_set(RenderSet::Cleanup),
+                        .in_set(RenderSystems::Cleanup),
                 ),
             );
     }

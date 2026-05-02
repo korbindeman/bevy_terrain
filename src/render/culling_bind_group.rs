@@ -48,7 +48,7 @@ impl From<&ExtractedView> for CullingUniform {
     fn from(view: &ExtractedView) -> Self {
         Self {
             world_position: view.world_from_view.translation(),
-            view_proj: view.world_from_view.compute_matrix().inverse(),
+            view_proj: view.world_from_view.to_matrix().inverse(),
             planes: default(),
         }
     }

@@ -11,12 +11,12 @@ use crate::{
 };
 use anyhow::Result;
 use bevy::{
+    platform::collections::{HashMap, HashSet},
     prelude::*,
     render::render_resource::*,
     tasks::{futures_lite::future, AsyncComputeTaskPool, Task},
-    utils::{HashMap, HashSet},
 };
-use image::{io::Reader, DynamicImage, ImageBuffer, Luma, LumaA, Rgb, Rgba};
+use image::{ImageReader as Reader, DynamicImage, ImageBuffer, Luma, LumaA, Rgb, Rgba};
 use itertools::Itertools;
 use std::{collections::VecDeque, fs, mem, ops::DerefMut};
 
@@ -30,7 +30,7 @@ const STORE_PNG: bool = false;
 #[derive(Copy, Clone, Debug, Default, ShaderType)]
 pub struct AtlasTile {
     pub(crate) coordinate: TileCoordinate,
-    #[size(16)]
+    #[shader(size(16))]
     pub(crate) atlas_index: u32,
 }
 

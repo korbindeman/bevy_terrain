@@ -127,8 +127,8 @@ impl AtlasBufferInfo {
         texture: &'a Texture,
         index: u32,
         mip_level: u32,
-    ) -> ImageCopyTexture {
-        ImageCopyTexture {
+    ) -> TexelCopyTextureInfo {
+        TexelCopyTextureInfo {
             texture,
             mip_level,
             origin: Origin3d {
@@ -139,10 +139,10 @@ impl AtlasBufferInfo {
         }
     }
 
-    fn image_copy_buffer<'a>(&'a self, buffer: &'a Buffer, index: u32) -> ImageCopyBuffer {
-        ImageCopyBuffer {
+    fn image_copy_buffer<'a>(&'a self, buffer: &'a Buffer, index: u32) -> TexelCopyBufferInfo {
+        TexelCopyBufferInfo {
             buffer,
-            layout: ImageDataLayout {
+            layout: TexelCopyBufferLayout {
                 bytes_per_row: Some(self.aligned_side_size),
                 rows_per_image: Some(self.texture_size),
                 offset: self.buffer_size(index) as BufferAddress,
@@ -322,7 +322,7 @@ impl GpuAtlasAttachment {
                         mip_level,
                     ),
                     &tile.data.bytes()[start..end],
-                    ImageDataLayout {
+                    TexelCopyBufferLayout {
                         offset: 0,
                         bytes_per_row: Some(side_size),
                         rows_per_image: Some(texture_size),

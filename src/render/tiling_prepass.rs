@@ -20,6 +20,7 @@ use bevy::{
         render_resource::*,
         renderer::{RenderContext, RenderDevice},
     },
+    shader::ShaderDefVal,
 };
 
 #[derive(Debug, Hash, PartialEq, Eq, Clone, RenderLabel)]
@@ -142,9 +143,15 @@ impl SpecializedComputePipeline for TilingPrepassPipelines {
     type Key = TilingPrepassPipelineKey;
 
     fn specialize(&self, key: Self::Key) -> ComputePipelineDescriptor {
-        let mut layout = default();
-        let mut shader = default();
-        let mut entry_point = default();
+        // TODO(bevy 0.18 migration): pipeline descriptors now expect
+        // `Vec<BindGroupLayoutDescriptor>` for `layout`, not `Vec<BindGroupLayout>`.
+        // The bind group layouts captured in this struct are owned `BindGroupLayout`
+        // handles created via `RenderDevice::create_bind_group_layout`, which do not
+        // implement `Into<BindGroupLayoutDescriptor>`. Rewriting this requires storing
+        // the descriptors alongside the layouts, or using `pipeline_cache.get_bind_group_layout`.
+        let mut layout: Vec<BindGroupLayout> = default();
+        let mut shader: Handle<Shader> = default();
+        let mut entry_point: Option<std::borrow::Cow<'static, str>> = None;
 
         let shader_defs = key.shader_defs();
 
@@ -155,7 +162,7 @@ impl SpecializedComputePipeline for TilingPrepassPipelines {
                 self.refine_tiles_layout.clone(),
             ];
             shader = self.refine_tiles_shader.clone();
-            entry_point = "refine_tiles".into();
+            entry_point = Some("refine_tiles".into());
         }
         if key.contains(TilingPrepassPipelineKey::PREPARE_ROOT) {
             layout = vec![
@@ -165,7 +172,7 @@ impl SpecializedComputePipeline for TilingPrepassPipelines {
                 self.prepare_indirect_layout.clone(),
             ];
             shader = self.prepare_prepass_shader.clone();
-            entry_point = "prepare_root".into();
+            entry_point = Some("prepare_root".into());
         }
         if key.contains(TilingPrepassPipelineKey::PREPARE_NEXT) {
             layout = vec![
@@ -175,7 +182,7 @@ impl SpecializedComputePipeline for TilingPrepassPipelines {
                 self.prepare_indirect_layout.clone(),
             ];
             shader = self.prepare_prepass_shader.clone();
-            entry_point = "prepare_next".into();
+            entry_point = Some("prepare_next".into());
         }
         if key.contains(TilingPrepassPipelineKey::PREPARE_RENDER) {
             layout = vec![
@@ -185,16 +192,20 @@ impl SpecializedComputePipeline for TilingPrepassPipelines {
                 self.prepare_indirect_layout.clone(),
             ];
             shader = self.prepare_prepass_shader.clone();
-            entry_point = "prepare_render".into();
+            entry_point = Some("prepare_render".into());
         }
 
+        // FIXME: layout should be Vec<BindGroupLayoutDescriptor>, not Vec<BindGroupLayout>.
+        // This will not compile until the layouts are stored as descriptors.
+        let _ = layout;
         ComputePipelineDescriptor {
             label: Some("tiling_prepass_pipeline".into()),
-            layout,
+            layout: default(),
             push_constant_ranges: default(),
             shader,
             shader_defs,
             entry_point,
+            zero_initialize_workgroup_memory: false,
         }
     }
 }

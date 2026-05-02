@@ -10,8 +10,33 @@ use crate::{
     terrain::TerrainComponents,
     terrain_data::gpu_tile_atlas::GpuTileAtlas,
 };
+// TODO(bevy 0.18 migration): The Material/MaterialPipeline/RenderMaterialInstances/PreparedMaterial
+// APIs have all been redesigned in Bevy 0.16-0.18. The custom rendering pipeline in this file
+// effectively reimplemented internal Bevy machinery that no longer exists in this form.
+//
+// In particular:
+//   * `MaterialPipeline<M>`, `RenderMaterialInstances<M>`, `PreparedMaterial<M>` are no longer
+//     generic; there is now a single erased `MaterialPipeline` and `RenderMaterialInstances`
+//     resource with material binding allocation handled via `MaterialBindGroupAllocator`.
+//   * `M::bind_group_layout(device)` was removed; use `M::bind_group_layout_descriptor(device)`.
+//   * `MeshPipelineViewLayoutKey` and `MeshPipeline::get_view_layout` now return a
+//     `MeshPipelineViewLayout` whose `main_layout`/`binding_array_layout` are
+//     `BindGroupLayoutDescriptor`s (not `BindGroupLayout`).
+//   * `RenderPipelineDescriptor.layout` is now `Vec<BindGroupLayoutDescriptor>` and pipelines now
+//     require `zero_initialize_workgroup_memory: bool` plus `entry_point: Option<Cow<'static,str>>`.
+//   * `Opaque3dBinKey` was split: ordering / batch / bin keys are now separate types
+//     (`Opaque3dBatchSetKey`, `Opaque3dBinKey`).
+//   * `ExtractInstancesPlugin::extract_visible` no longer exists; the new mesh-material plugin
+//     uses `MeshMaterial3d<M>`.
+//   * `Msaa` is now a per-camera component, not a `Resource`.
+//
+// See bevy_pbr-0.18.1/src/material.rs and bevy_pbr-0.18.1/src/render/mesh.rs for the new design.
+// This file needs to be largely rewritten on top of `MaterialPipeline` / `MaterialPipelineKey`
+// rather than re-implementing it. For now, the original implementation is kept so the diff is
+// reviewable and the architectural blockers are visible.
 use bevy::{
     core_pipeline::core_3d::{Opaque3d, Opaque3dBinKey},
+    image::BevyDefault,
     pbr::{
         MaterialPipeline, MeshPipeline, MeshPipelineViewLayoutKey, PreparedMaterial,
         RenderMaterialInstances, SetMaterialBindGroup, SetMeshViewBindGroup,
@@ -26,9 +51,10 @@ use bevy::{
         },
         render_resource::*,
         renderer::RenderDevice,
-        texture::{BevyDefault, GpuImage},
-        Render, RenderApp, RenderSet,
+        texture::GpuImage,
+        Render, RenderApp, RenderSystems,
     },
+    shader::{ShaderDefVal, ShaderRef},
 };
 use std::{hash::Hash, marker::PhantomData};
 
@@ -457,7 +483,7 @@ where
             .add_systems(
                 Render,
                 queue_terrain::<M>
-                    .in_set(RenderSet::QueueMeshes)
+                    .in_set(RenderSystems::QueueMeshes)
                     .after(prepare_assets::<PreparedMaterial<M>>),
             );
     }
