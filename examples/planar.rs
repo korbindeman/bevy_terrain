@@ -1,5 +1,5 @@
 use bevy::math::DVec3;
-use bevy::{prelude::*, reflect::TypePath, render::render_resource::*};
+use bevy::{prelude::*, reflect::TypePath, render::render_resource::*, shader::ShaderRef};
 use bevy_terrain::prelude::*;
 
 const PATH: &str = "terrains/planar";
@@ -76,12 +76,12 @@ fn setup(
     let tile_tree = TileTree::new(&tile_atlas, &view_config);
 
     commands.spawn_big_space(ReferenceFrame::default(), |root| {
-        let frame = root.frame().clone();
+        let frame = root.grid().clone();
 
         let terrain = root
             .spawn_spatial((
                 TerrainBundle::new(tile_atlas, &frame),
-                materials.add(TerrainMaterial { gradient }),
+                MeshMaterial3d(materials.add(TerrainMaterial { gradient })),
             ))
             .id();
 
