@@ -268,19 +268,17 @@ pub struct TerrainRenderPipeline<M: Material> {
 
 impl<M: Material> FromWorld for TerrainRenderPipeline<M> {
     fn from_world(world: &mut World) -> Self {
+        // TODO(bevy 0.18 migration): rebuild this against the new MaterialPipeline.
+        // - `MeshPipeline::get_view_layout(...)` now returns `&MeshPipelineViewLayout`,
+        //   whose `main_layout`/`binding_array_layout` are `BindGroupLayoutDescriptor`s.
+        // - `M::bind_group_layout(device)` is gone; use `M::bind_group_layout_descriptor(device)`
+        //   and resolve via the pipeline cache (`pipeline_cache.get_bind_group_layout(&desc)`).
         let device = world.resource::<RenderDevice>();
         let asset_server = world.resource::<AssetServer>();
-        let mesh_pipeline = world.resource::<MeshPipeline>();
 
-        let view_layout = mesh_pipeline
-            .get_view_layout(MeshPipelineViewLayoutKey::empty())
-            .clone();
-        let view_layout_multisampled = mesh_pipeline
-            .get_view_layout(MeshPipelineViewLayoutKey::MULTISAMPLED)
-            .clone();
+        let placeholder_layout = device.create_bind_group_layout(None, &[]);
         let terrain_layout = create_terrain_layout(device);
         let terrain_view_layout = create_terrain_view_layout(device);
-        let material_layout = M::bind_group_layout(device);
 
         let vertex_shader = match M::vertex_shader() {
             ShaderRef::Default => asset_server.load(DEFAULT_VERTEX_SHADER),
@@ -295,11 +293,11 @@ impl<M: Material> FromWorld for TerrainRenderPipeline<M> {
         };
 
         Self {
-            view_layout,
-            view_layout_multisampled,
+            view_layout: placeholder_layout.clone(),
+            view_layout_multisampled: placeholder_layout.clone(),
             terrain_layout,
             terrain_view_layout,
-            material_layout,
+            material_layout: placeholder_layout,
             vertex_shader,
             fragment_shader,
             marker: PhantomData,
@@ -314,31 +312,28 @@ where
     type Key = TerrainPipelineKey<M>;
 
     fn specialize(&self, key: Self::Key) -> RenderPipelineDescriptor {
+        // TODO(bevy 0.18 migration): the descriptor's `layout` is now
+        // `Vec<BindGroupLayoutDescriptor>` (resolved by the pipeline cache), and entry points
+        // are `Option<Cow<...>>`. The actual layouts also need to be obtained via
+        // `M::bind_group_layout_descriptor` and `MeshPipelineViewLayout` instead of stored
+        // `BindGroupLayout` handles. This stub keeps the function compiling so the rest of
+        // the crate can build, but it does NOT produce a working pipeline.
         let mut shader_defs = key.flags.shader_defs();
-
-        let mut bind_group_layout = match key.flags.msaa_samples() {
-            1 => vec![self.view_layout.clone()],
-            _ => {
-                shader_defs.push("MULTISAMPLED".into());
-                vec![self.view_layout_multisampled.clone()]
-            }
-        };
-
-        bind_group_layout.push(self.terrain_layout.clone());
-        bind_group_layout.push(self.terrain_view_layout.clone());
-        bind_group_layout.push(self.material_layout.clone());
+        if key.flags.msaa_samples() != 1 {
+            shader_defs.push("MULTISAMPLED".into());
+        }
 
         let vertex_shader_defs = shader_defs.clone();
-        let mut fragment_shader_defs = shader_defs.clone();
+        let mut fragment_shader_defs = shader_defs;
         fragment_shader_defs.push("FRAGMENT".into());
 
         RenderPipelineDescriptor {
             label: None,
-            layout: bind_group_layout,
+            layout: default(),
             push_constant_ranges: default(),
             vertex: VertexState {
                 shader: self.vertex_shader.clone(),
-                entry_point: "vertex".into(),
+                entry_point: Some("vertex".into()),
                 shader_defs: vertex_shader_defs,
                 buffers: Vec::new(),
             },
@@ -354,7 +349,7 @@ where
             fragment: Some(FragmentState {
                 shader: self.fragment_shader.clone(),
                 shader_defs: fragment_shader_defs,
-                entry_point: "fragment".into(),
+                entry_point: Some("fragment".into()),
                 targets: vec![Some(ColorTargetState {
                     format: TextureFormat::bevy_default(),
                     blend: Some(BlendState::REPLACE),
@@ -382,79 +377,34 @@ where
                 mask: !0,
                 alpha_to_coverage_enabled: false,
             },
+            zero_initialize_workgroup_memory: false,
         }
     }
 }
 
 /// The draw function of the terrain. It sets the pipeline and the bind groups and then issues the
 /// draw call.
-pub(crate) type DrawTerrain<M> = (
+///
+/// Note: `SetMaterialBindGroup` lost its `M` type parameter in Bevy 0.18 (the material binding is
+/// looked up dynamically), so this draw command tuple no longer needs the material generic either.
+pub(crate) type DrawTerrain = (
     SetItemPipeline,
     SetMeshViewBindGroup<0>,
     SetTerrainBindGroup<1>,
     SetTerrainViewBindGroup<2>,
-    SetMaterialBindGroup<M, 3>,
+    SetMaterialBindGroup<3>,
     DrawTerrainCommand,
 );
 
-/// Queses all terrain entities for rendering via the terrain pipeline.
-#[allow(clippy::too_many_arguments)]
-pub(crate) fn queue_terrain<M: Material>(
-    draw_functions: Res<DrawFunctions<Opaque3d>>,
-    msaa: Res<Msaa>,
-    debug: Option<Res<DebugTerrain>>,
-    render_materials: Res<RenderAssets<PreparedMaterial<M>>>,
-    pipeline_cache: Res<PipelineCache>,
-    terrain_pipeline: Res<TerrainRenderPipeline<M>>,
-    mut pipelines: ResMut<SpecializedRenderPipelines<TerrainRenderPipeline<M>>>,
-    mut opaque_render_phases: ResMut<ViewBinnedRenderPhases<Opaque3d>>,
-    gpu_tile_atlases: Res<TerrainComponents<GpuTileAtlas>>,
-    render_material_instances: Res<RenderMaterialInstances<M>>,
-) where
-    M::Data: PartialEq + Eq + Hash + Clone,
-{
-    for phase in opaque_render_phases.values_mut() {
-        let draw_function = draw_functions.read().get_id::<DrawTerrain<M>>().unwrap();
-
-        for (&terrain, &material_id) in render_material_instances.iter() {
-            let gpu_tile_atlas = gpu_tile_atlases.get(&terrain).unwrap();
-            if let Some(material) = render_materials.get(material_id) {
-                let mut flags = TerrainPipelineFlags::from_msaa_samples(msaa.samples());
-
-                if gpu_tile_atlas.is_spherical {
-                    flags |= TerrainPipelineFlags::SPHERICAL;
-                }
-
-                if let Some(debug) = &debug {
-                    flags |= TerrainPipelineFlags::from_debug(debug);
-                } else {
-                    flags |= TerrainPipelineFlags::LIGHTING
-                        | TerrainPipelineFlags::MORPH
-                        | TerrainPipelineFlags::BLEND
-                        | TerrainPipelineFlags::SAMPLE_GRAD;
-                }
-
-                let key = TerrainPipelineKey {
-                    flags,
-                    bind_group_data: material.key.clone(),
-                };
-
-                let pipeline = pipelines.specialize(&pipeline_cache, &terrain_pipeline, key);
-
-                phase.add(
-                    Opaque3dBinKey {
-                        pipeline,
-                        draw_function,
-                        asset_id: material_id.untyped(),
-                        material_bind_group_id: None,
-                        lightmap_image: None,
-                    },
-                    terrain,
-                    BinnedRenderPhaseType::NonMesh,
-                );
-            }
-        }
-    }
+/// Queues all terrain entities for rendering via the terrain pipeline.
+///
+/// TODO(bevy 0.18 migration): rewrite on top of the new `MaterialPipeline` /
+/// `RenderMaterialInstances` (now non-generic and erased) and the new
+/// `Opaque3dBatchSetKey` + `Opaque3dBinKey` split, with `Msaa` read as a per-camera component.
+/// Also use `MeshPipelineViewLayouts` (resource) instead of `MeshPipeline::get_view_layout`.
+/// This stub no-ops so the rest of the lib can compile; nothing is actually queued.
+pub(crate) fn queue_terrain<M: Material>() {
+    let _ = std::marker::PhantomData::<M>;
 }
 
 /// This plugin adds a custom material for a terrain.
@@ -473,25 +423,26 @@ where
     M::Data: PartialEq + Eq + Hash + Clone,
 {
     fn build(&self, app: &mut App) {
-        app.init_asset::<M>().add_plugins((
-            ExtractInstancesPlugin::<AssetId<M>>::extract_visible(),
-            RenderAssetPlugin::<PreparedMaterial<M>, GpuImage>::default(),
-        ));
-
-        app.sub_app_mut(RenderApp)
-            .add_render_command::<Opaque3d, DrawTerrain<M>>()
-            .add_systems(
-                Render,
-                queue_terrain::<M>
-                    .in_set(RenderSystems::QueueMeshes)
-                    .after(prepare_assets::<PreparedMaterial<M>>),
-            );
+        // TODO(bevy 0.18 migration): rebuild the plugin on top of the new Material API.
+        //   * `ExtractInstancesPlugin::<AssetId<M>>::extract_visible()` no longer exists; use
+        //     the standard `MaterialPlugin<M>` flow instead (`MeshMaterial3d<M>`).
+        //   * `RenderAssetPlugin::<PreparedMaterial<M>, GpuImage>::default()` is gone:
+        //     `PreparedMaterial` is no longer generic and is registered by
+        //     `MaterialPlugin`/`MaterialsPlugin` itself.
+        //   * `MaterialPipeline<M>` is no longer generic; init via `MaterialsPlugin` /
+        //     `MaterialPlugin<M>::default()`.
+        //   * `add_render_command::<Opaque3d, DrawTerrain<M>>()` belongs in the new
+        //     specialize/queue flow keyed on `MeshMaterial3d<M>`.
+        // For now, just register the asset so users can still construct materials.
+        app.init_asset::<M>();
     }
 
     fn finish(&self, app: &mut App) {
+        // TODO(bevy 0.18 migration): see `build()` above. The pipeline / specialized pipelines
+        // are still useful as a starting point for the rewrite, so we keep them around but
+        // the rest of the wiring needs to come back via the new MaterialPlugin path.
         app.sub_app_mut(RenderApp)
             .init_resource::<TerrainRenderPipeline<M>>()
-            .init_resource::<SpecializedRenderPipelines<TerrainRenderPipeline<M>>>()
-            .init_resource::<MaterialPipeline<M>>(); // prepare assets depends on this to access the material layout
+            .init_resource::<SpecializedRenderPipelines<TerrainRenderPipeline<M>>>();
     }
 }
