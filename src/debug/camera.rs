@@ -122,7 +122,7 @@ pub fn camera_controller(
         return;
     };
     #[cfg(feature = "high_precision")]
-    let frame = frames.parent_frame(camera).unwrap();
+    let frame = frames.parent_grid(camera).unwrap();
 
     #[cfg(not(feature = "high_precision"))]
     let Ok((mut transform, mut controller)) = camera.single_mut() else {

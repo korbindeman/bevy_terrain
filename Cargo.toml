@@ -26,7 +26,7 @@ bytemuck = "1.14"
 anyhow = "1.0"
 bincode = "2.0"
 async-channel = "2.1"
-big_space = { version = "0.12", optional = true }
+big_space = { version = "0.12", features = ["i32"], optional = true }
 
 [[example]]
 name = "preprocess_planar"

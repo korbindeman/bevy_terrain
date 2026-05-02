@@ -32,7 +32,7 @@ pub struct TerrainPlugin;
 impl Plugin for TerrainPlugin {
     fn build(&self, app: &mut App) {
         #[cfg(feature = "high_precision")]
-        app.add_plugins(crate::big_space::BigSpacePlugin::default());
+        app.add_plugins(crate::big_space::BigSpacePlugin);
 
         app.init_resource::<InternalShaders>()
             .init_resource::<TerrainViewComponents<TileTree>>()
