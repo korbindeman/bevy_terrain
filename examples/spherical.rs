@@ -1,4 +1,6 @@
-use bevy::{math::DVec3, prelude::*, reflect::TypePath, render::render_resource::*};
+use bevy::{
+    math::DVec3, prelude::*, reflect::TypePath, render::render_resource::*, shader::ShaderRef,
+};
 use bevy_terrain::prelude::*;
 
 const PATH: &str = "terrains/spherical";
@@ -81,14 +83,14 @@ fn setup(
     let tile_tree = TileTree::new(&tile_atlas, &view_config);
 
     commands.spawn_big_space(ReferenceFrame::default(), |root| {
-        let frame = root.frame().clone();
+        let frame = root.grid().clone();
 
         let terrain = root
             .spawn_spatial((
                 TerrainBundle::new(tile_atlas, &frame),
-                materials.add(TerrainMaterial {
+                MeshMaterial3d(materials.add(TerrainMaterial {
                     gradient: gradient.clone(),
-                }),
+                })),
             ))
             .id();
 
@@ -106,17 +108,11 @@ fn setup(
         let (sun_cell, sun_translation) = frame.translation_to_grid(sun_position);
 
         root.spawn_spatial((
-            PbrBundle {
-                mesh: meshes.add(Sphere::new(RADIUS as f32 * 2.0).mesh().build()),
-                transform: Transform::from_translation(sun_translation),
-                ..default()
-            },
+            Mesh3d(meshes.add(Sphere::new(RADIUS as f32 * 2.0).mesh().build())),
+            Transform::from_translation(sun_translation),
             sun_cell,
         ));
 
-        root.spawn_spatial(PbrBundle {
-            mesh: meshes.add(Cuboid::from_length(RADIUS as f32 * 0.1)),
-            ..default()
-        });
+        root.spawn_spatial(Mesh3d(meshes.add(Cuboid::from_length(RADIUS as f32 * 0.1))));
     });
 }

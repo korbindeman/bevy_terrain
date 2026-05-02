@@ -7,7 +7,7 @@ use bevy::{
         query::ROQueryItem,
         system::{lifetimeless::SRes, SystemParamItem},
     },
-    pbr::{MeshTransforms, MeshUniform, PreviousGlobalTransform},
+    pbr::{MaterialBindGroupSlot, MeshTransforms, MeshUniform, PreviousGlobalTransform},
     prelude::*,
     render::{
         render_phase::{PhaseItem, RenderCommand, RenderCommandResult, TrackedRenderPass},
@@ -20,9 +20,10 @@ use bevy::{
 use itertools::Itertools;
 use std::iter;
 
-pub(crate) fn create_terrain_layout(device: &RenderDevice) -> BindGroupLayout {
-    device.create_bind_group_layout(
-        None,
+/// Descriptor for the terrain (per-tile-atlas) bind group layout.
+pub(crate) fn terrain_layout_descriptor() -> BindGroupLayoutDescriptor {
+    BindGroupLayoutDescriptor::new(
+        "terrain_layout",
         &BindGroupLayoutEntries::sequential(
             ShaderStages::all(),
             (
@@ -100,6 +101,7 @@ pub struct TerrainData {
 impl TerrainData {
     fn new(
         device: &RenderDevice,
+        pipeline_cache: &PipelineCache,
         fallback_image: &FallbackImage,
         tile_atlas: &TileAtlas,
         gpu_tile_atlas: &GpuTileAtlas,
@@ -140,9 +142,10 @@ impl TerrainData {
         let attachment_buffer =
             StaticBuffer::create(None, device, &attachment_uniform, BufferUsages::UNIFORM);
 
+        let terrain_layout = pipeline_cache.get_bind_group_layout(&terrain_layout_descriptor());
         let terrain_bind_group = device.create_bind_group(
             "terrain_bind_group",
-            &create_terrain_layout(device),
+            &terrain_layout,
             &BindGroupEntries::sequential((
                 &mesh_buffer,
                 &terrain_config_buffer,
@@ -167,6 +170,7 @@ impl TerrainData {
 
     pub(crate) fn initialize(
         device: Res<RenderDevice>,
+        pipeline_cache: Res<PipelineCache>,
         fallback_image: Res<FallbackImage>,
         mut terrain_data: ResMut<TerrainComponents<TerrainData>>,
         gpu_tile_atlases: Res<TerrainComponents<GpuTileAtlas>>,
@@ -177,7 +181,13 @@ impl TerrainData {
 
             terrain_data.insert(
                 terrain,
-                TerrainData::new(&device, &fallback_image, tile_atlas.into(), gpu_tile_atlas),
+                TerrainData::new(
+                    &device,
+                    &pipeline_cache,
+                    &fallback_image,
+                    tile_atlas.into(),
+                    gpu_tile_atlas,
+                ),
             );
         }
     }
@@ -197,7 +207,14 @@ impl TerrainData {
                     .unwrap_or(transform.affine()))
                     .into(),
             };
-            let mesh_uniform = MeshUniform::new(&mesh_transforms, None);
+            let mesh_uniform = MeshUniform::new(
+                &mesh_transforms,
+                0,
+                MaterialBindGroupSlot(0),
+                None,
+                None,
+                None,
+            );
 
             let terrain_data = terrain_data.get_mut(&terrain).unwrap();
             terrain_data.mesh_buffer.set_value(mesh_uniform);
@@ -224,8 +241,8 @@ impl<const I: usize, P: PhaseItem> RenderCommand<P> for SetTerrainBindGroup<I> {
     #[inline]
     fn render<'w>(
         item: &P,
-        _: ROQueryItem<'w, Self::ViewQuery>,
-        _: Option<ROQueryItem<'w, Self::ItemQuery>>,
+        _: ROQueryItem<'w, '_, Self::ViewQuery>,
+        _: Option<ROQueryItem<'w, '_, Self::ItemQuery>>,
         terrain_data: SystemParamItem<'w, '_, Self::Param>,
         pass: &mut TrackedRenderPass<'w>,
     ) -> RenderCommandResult {

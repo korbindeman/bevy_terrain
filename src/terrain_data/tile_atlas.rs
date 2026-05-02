@@ -11,12 +11,12 @@ use crate::{
 };
 use anyhow::Result;
 use bevy::{
+    platform::collections::{HashMap, HashSet},
     prelude::*,
     render::render_resource::*,
     tasks::{futures_lite::future, AsyncComputeTaskPool, Task},
-    utils::{HashMap, HashSet},
 };
-use image::{io::Reader, DynamicImage, ImageBuffer, Luma, LumaA, Rgb, Rgba};
+use image::{ImageReader as Reader, DynamicImage, ImageBuffer, Luma, LumaA, Rgb, Rgba};
 use itertools::Itertools;
 use std::{collections::VecDeque, fs, mem, ops::DerefMut};
 
@@ -30,7 +30,7 @@ const STORE_PNG: bool = false;
 #[derive(Copy, Clone, Debug, Default, ShaderType)]
 pub struct AtlasTile {
     pub(crate) coordinate: TileCoordinate,
-    #[size(16)]
+    #[shader(size(16))]
     pub(crate) atlas_index: u32,
 }
 
@@ -515,7 +515,14 @@ impl TileAtlasState {
 ///
 /// The [`u32`] can be used for accessing the attached data in systems by the CPU
 /// and in shaders by the GPU.
+///
+/// `TileAtlas` doubles as the visibility marker for terrain entities: when added to an
+/// entity, the on-add hook pushes its `TypeId` into the entity's `VisibilityClass`, so
+/// the standard `check_visibility` system tracks terrains and the queue can find them
+/// via `RenderVisibleEntities::iter::<TileAtlas>()`.
 #[derive(Component)]
+#[require(bevy::camera::visibility::VisibilityClass)]
+#[component(on_add = bevy::camera::visibility::add_visibility_class::<TileAtlas>)]
 pub struct TileAtlas {
     pub(crate) attachments: Vec<AtlasAttachment>,
     // stores the attachment data

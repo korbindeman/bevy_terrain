@@ -49,9 +49,10 @@ struct DownsampleData {
     tile_index: u32,
 }
 
-pub(crate) fn create_split_layout(device: &RenderDevice) -> BindGroupLayout {
-    device.create_bind_group_layout(
-        None,
+/// Descriptor for the split-task bind group used by the preprocess compute pipeline.
+pub(crate) fn split_layout_descriptor() -> BindGroupLayoutDescriptor {
+    BindGroupLayoutDescriptor::new(
+        "split_layout",
         &BindGroupLayoutEntries::sequential(
             ShaderStages::COMPUTE,
             (
@@ -63,16 +64,18 @@ pub(crate) fn create_split_layout(device: &RenderDevice) -> BindGroupLayout {
     )
 }
 
-pub(crate) fn create_stitch_layout(device: &RenderDevice) -> BindGroupLayout {
-    device.create_bind_group_layout(
-        None,
+/// Descriptor for the stitch-task bind group used by the preprocess compute pipeline.
+pub(crate) fn stitch_layout_descriptor() -> BindGroupLayoutDescriptor {
+    BindGroupLayoutDescriptor::new(
+        "stitch_layout",
         &BindGroupLayoutEntries::single(ShaderStages::COMPUTE, uniform_buffer::<StitchData>(false)),
     )
 }
 
-pub(crate) fn create_downsample_layout(device: &RenderDevice) -> BindGroupLayout {
-    device.create_bind_group_layout(
-        None,
+/// Descriptor for the downsample-task bind group used by the preprocess compute pipeline.
+pub(crate) fn downsample_layout_descriptor() -> BindGroupLayoutDescriptor {
+    BindGroupLayoutDescriptor::new(
+        "downsample_layout",
         &BindGroupLayoutEntries::single(
             ShaderStages::COMPUTE,
             uniform_buffer::<DownsampleData>(false),
@@ -163,9 +166,11 @@ impl GpuPreprocessor {
                                 BufferUsages::UNIFORM,
                             );
 
+                            let split_layout =
+                                pipeline_cache.get_bind_group_layout(&split_layout_descriptor());
                             Some(device.create_bind_group(
                                 format!("{}_split_bind_group", attachment.name).as_str(),
-                                &create_split_layout(&device),
+                                &split_layout,
                                 &BindGroupEntries::sequential((
                                     &split_buffer,
                                     &tile_data.texture_view,
@@ -185,9 +190,11 @@ impl GpuPreprocessor {
                                 BufferUsages::UNIFORM,
                             );
 
+                            let stitch_layout =
+                                pipeline_cache.get_bind_group_layout(&stitch_layout_descriptor());
                             Some(device.create_bind_group(
                                 format!("{}_stitch_bind_group", attachment.name).as_str(),
-                                &create_stitch_layout(&device),
+                                &stitch_layout,
                                 &BindGroupEntries::single(&stitch_buffer),
                             ))
                         }
@@ -203,9 +210,11 @@ impl GpuPreprocessor {
                                 BufferUsages::UNIFORM,
                             );
 
+                            let downsample_layout = pipeline_cache
+                                .get_bind_group_layout(&downsample_layout_descriptor());
                             Some(device.create_bind_group(
                                 format!("{}_downsample_bind_group", attachment.name).as_str(),
-                                &create_downsample_layout(&device),
+                                &downsample_layout,
                                 &BindGroupEntries::single(&downsample_buffer),
                             ))
                         }

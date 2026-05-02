@@ -1,27 +1,24 @@
 use bevy::{
-    asset::{io::Reader, AssetLoader, AsyncReadExt, LoadContext},
+    asset::{io::Reader, AssetLoader, LoadContext, RenderAssetUsages},
+    image::TextureError,
     prelude::*,
-    render::{
-        render_asset::RenderAssetUsages,
-        render_resource::{Extent3d, TextureDimension, TextureFormat},
-        texture::TextureError,
-    },
+    render::render_resource::{Extent3d, TextureDimension, TextureFormat},
 };
 use bytemuck::cast_slice;
 use std::io::Cursor;
 use tiff::decoder::{Decoder, DecodingResult};
 
-#[derive(Default)]
+#[derive(Default, TypePath)]
 pub struct TiffLoader;
 impl AssetLoader for TiffLoader {
     type Asset = Image;
     type Settings = ();
     type Error = TextureError;
-    async fn load<'a>(
-        &'a self,
-        reader: &'a mut Reader<'_>,
-        _settings: &'a Self::Settings,
-        _load_context: &'a mut LoadContext<'_>,
+    async fn load(
+        &self,
+        reader: &mut dyn Reader,
+        _settings: &Self::Settings,
+        _load_context: &mut LoadContext<'_>,
     ) -> Result<Image, Self::Error> {
         let mut bytes = Vec::new();
         reader.read_to_end(&mut bytes).await.unwrap();

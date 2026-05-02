@@ -348,7 +348,7 @@ impl TileTree {
             let view_transform = view_transforms.get(view).unwrap();
 
             #[cfg(feature = "high_precision")]
-            let frame = frames.parent_frame(terrain).unwrap();
+            let frame = frames.parent_grid(terrain).unwrap();
             #[cfg(feature = "high_precision")]
             let view_position = view_transform.position_double(frame);
             #[cfg(not(feature = "high_precision"))]

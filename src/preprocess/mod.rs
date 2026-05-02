@@ -2,13 +2,14 @@ use crate::{
     formats::tiff::TiffLoader,
     preprocess::{
         gpu_preprocessor::{
-            create_downsample_layout, create_split_layout, create_stitch_layout, GpuPreprocessor,
+            downsample_layout_descriptor, split_layout_descriptor, stitch_layout_descriptor,
+            GpuPreprocessor,
         },
         preprocessor::{preprocessor_load_tile, select_ready_tasks, PreprocessTaskType},
     },
     shaders::{load_preprocess_shaders, DOWNSAMPLE_SHADER, SPLIT_SHADER, STITCH_SHADER},
     terrain::TerrainComponents,
-    terrain_data::gpu_tile_atlas::{create_attachment_layout, GpuTileAtlas},
+    terrain_data::gpu_tile_atlas::{attachment_layout_descriptor, GpuTileAtlas},
 };
 use bevy::{
     prelude::*,
@@ -16,8 +17,8 @@ use bevy::{
         graph::CameraDriverLabel,
         render_graph::{self, RenderGraph, RenderLabel},
         render_resource::*,
-        renderer::{RenderContext, RenderDevice},
-        Render, RenderApp, RenderSet,
+        renderer::RenderContext,
+        Render, RenderApp, RenderStartup, RenderSystems,
     },
 };
 
@@ -48,7 +49,7 @@ impl TerrainPreprocessItem {
     fn pipelines<'a>(
         &'a self,
         pipeline_cache: &'a PipelineCache,
-    ) -> Option<(&ComputePipeline, &ComputePipeline, &ComputePipeline)> {
+    ) -> Option<(&'a ComputePipeline, &'a ComputePipeline, &'a ComputePipeline)> {
         Some((
             pipeline_cache.get_compute_pipeline(self.split_pipeline)?,
             pipeline_cache.get_compute_pipeline(self.stitch_pipeline)?,
@@ -63,60 +64,49 @@ impl TerrainPreprocessItem {
 
 #[derive(Resource)]
 pub struct TerrainPreprocessPipelines {
-    attachment_layout: BindGroupLayout,
-    split_layout: BindGroupLayout,
-    stitch_layout: BindGroupLayout,
-    downsample_layout: BindGroupLayout,
+    attachment_layout: BindGroupLayoutDescriptor,
+    split_layout: BindGroupLayoutDescriptor,
+    stitch_layout: BindGroupLayoutDescriptor,
+    downsample_layout: BindGroupLayoutDescriptor,
     split_shader: Handle<Shader>,
     stitch_shader: Handle<Shader>,
     downsample_shader: Handle<Shader>,
 }
 
-impl FromWorld for TerrainPreprocessPipelines {
-    fn from_world(world: &mut World) -> Self {
-        let device = world.resource::<RenderDevice>();
-        let asset_server = world.resource::<AssetServer>();
-
-        let attachment_layout = create_attachment_layout(device);
-        let split_layout = create_split_layout(device);
-        let stitch_layout = create_stitch_layout(device);
-        let downsample_layout = create_downsample_layout(device);
-
-        let split_shader = asset_server.load(SPLIT_SHADER);
-        let stitch_shader = asset_server.load(STITCH_SHADER);
-        let downsample_shader = asset_server.load(DOWNSAMPLE_SHADER);
-
-        Self {
-            attachment_layout,
-            split_layout,
-            stitch_layout,
-            downsample_layout,
-            split_shader,
-            stitch_shader,
-            downsample_shader,
-        }
-    }
+/// Initializes the [`TerrainPreprocessPipelines`] resource. Runs as a [`RenderStartup`] system
+/// (consistent with the rest of `bevy_pbr`'s 0.18+ pipeline initialization).
+pub fn init_terrain_preprocess_pipelines(
+    mut commands: Commands,
+    asset_server: Res<AssetServer>,
+) {
+    commands.insert_resource(TerrainPreprocessPipelines {
+        attachment_layout: attachment_layout_descriptor(),
+        split_layout: split_layout_descriptor(),
+        stitch_layout: stitch_layout_descriptor(),
+        downsample_layout: downsample_layout_descriptor(),
+        split_shader: asset_server.load(SPLIT_SHADER),
+        stitch_shader: asset_server.load(STITCH_SHADER),
+        downsample_shader: asset_server.load(DOWNSAMPLE_SHADER),
+    });
 }
 
 impl SpecializedComputePipeline for TerrainPreprocessPipelines {
     type Key = TerrainPreprocessPipelineKey;
 
     fn specialize(&self, key: Self::Key) -> ComputePipelineDescriptor {
-        let mut layout = default();
-        let mut shader = default();
-        let mut entry_point = default();
-
-        let shader_defs = vec![];
+        let mut layout: Vec<BindGroupLayoutDescriptor> = default();
+        let mut shader: Handle<Shader> = default();
+        let mut entry_point: Option<std::borrow::Cow<'static, str>> = None;
 
         if key.contains(TerrainPreprocessPipelineKey::SPLIT) {
             layout = vec![self.attachment_layout.clone(), self.split_layout.clone()];
             shader = self.split_shader.clone();
-            entry_point = "split".into();
+            entry_point = Some("split".into());
         }
         if key.contains(TerrainPreprocessPipelineKey::STITCH) {
             layout = vec![self.attachment_layout.clone(), self.stitch_layout.clone()];
             shader = self.stitch_shader.clone();
-            entry_point = "stitch".into();
+            entry_point = Some("stitch".into());
         }
         if key.contains(TerrainPreprocessPipelineKey::DOWNSAMPLE) {
             layout = vec![
@@ -124,7 +114,7 @@ impl SpecializedComputePipeline for TerrainPreprocessPipelines {
                 self.downsample_layout.clone(),
             ];
             shader = self.downsample_shader.clone();
-            entry_point = "downsample".into();
+            entry_point = Some("downsample".into());
         }
 
         ComputePipelineDescriptor {
@@ -132,8 +122,9 @@ impl SpecializedComputePipeline for TerrainPreprocessPipelines {
             layout,
             push_constant_ranges: default(),
             shader,
-            shader_defs,
+            shader_defs: vec![],
             entry_point,
+            zero_initialize_workgroup_memory: false,
         }
     }
 }
@@ -262,6 +253,8 @@ impl Plugin for TerrainPreprocessPlugin {
         app.sub_app_mut(RenderApp)
             .init_resource::<TerrainComponents<GpuPreprocessor>>()
             .init_resource::<TerrainComponents<TerrainPreprocessItem>>()
+            .init_resource::<SpecializedComputePipelines<TerrainPreprocessPipelines>>()
+            .add_systems(RenderStartup, init_terrain_preprocess_pipelines)
             .add_systems(
                 ExtractSchedule,
                 (
@@ -272,9 +265,9 @@ impl Plugin for TerrainPreprocessPlugin {
             .add_systems(
                 Render,
                 (
-                    queue_terrain_preprocess.in_set(RenderSet::Queue),
+                    queue_terrain_preprocess.in_set(RenderSystems::Queue),
                     GpuPreprocessor::prepare
-                        .in_set(RenderSet::PrepareAssets)
+                        .in_set(RenderSystems::PrepareAssets)
                         .before(GpuTileAtlas::prepare),
                 ),
             );
@@ -283,12 +276,10 @@ impl Plugin for TerrainPreprocessPlugin {
     fn finish(&self, app: &mut App) {
         load_preprocess_shaders(app);
 
-        let render_app = app
+        let mut render_graph = app
             .sub_app_mut(RenderApp)
-            .init_resource::<SpecializedComputePipelines<TerrainPreprocessPipelines>>()
-            .init_resource::<TerrainPreprocessPipelines>();
-
-        let mut render_graph = render_app.world_mut().resource_mut::<RenderGraph>();
+            .world_mut()
+            .resource_mut::<RenderGraph>();
         render_graph.add_node(TerrainPreprocessLabel, TerrainPreprocessNode);
         render_graph.add_node_edge(TerrainPreprocessLabel, CameraDriverLabel);
     }

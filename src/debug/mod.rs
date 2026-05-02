@@ -5,11 +5,10 @@ use crate::{
     terrain_view::TerrainViewComponents,
 };
 use bevy::{
-    asset::LoadState,
     prelude::*,
     render::{render_resource::*, Extract, RenderApp},
-    transform::TransformSystem,
-    window::PrimaryWindow,
+    transform::TransformSystems,
+    window::{CursorOptions, PrimaryWindow},
 };
 
 pub mod camera;
@@ -33,7 +32,7 @@ impl Plugin for TerrainDebugPlugin {
             )
             .add_systems(
                 PostUpdate,
-                camera_controller.before(TransformSystem::TransformPropagate),
+                camera_controller.before(TransformSystems::Propagate),
             );
 
         app.sub_app_mut(RenderApp)
@@ -260,23 +259,22 @@ pub fn update_view_parameter(
 }
 
 pub(crate) fn debug_lighting(mut commands: Commands) {
-    commands.spawn(DirectionalLightBundle {
-        directional_light: DirectionalLight {
+    commands.spawn((
+        DirectionalLight {
             illuminance: 5000.0,
             ..default()
         },
-        transform: Transform::from_xyz(-1.0, 1.0, -1.0).looking_at(Vec3::ZERO, Vec3::Y),
-        ..default()
-    });
-    commands.insert_resource(AmbientLight {
-        brightness: 100.0,
-        ..default()
-    });
+        Transform::from_xyz(-1.0, 1.0, -1.0).looking_at(Vec3::ZERO, Vec3::Y),
+    ));
+    // Bevy 0.18 made `AmbientLight` a per-camera component (defaulted via required components on
+    // `Camera3d`). To override it globally, attach it to the camera entity instead.
+    let _ = AmbientLight::default;
 }
 
-pub fn debug_window(mut window: Query<&mut Window, With<PrimaryWindow>>) {
-    let mut window = window.single_mut();
-    window.cursor.visible = false;
+pub fn debug_window(mut cursor: Query<&mut CursorOptions, With<PrimaryWindow>>) {
+    if let Ok(mut cursor) = cursor.single_mut() {
+        cursor.visible = false;
+    }
 }
 
 #[derive(Resource, Default)]
@@ -300,7 +298,7 @@ fn finish_loading_images(
     mut images: ResMut<Assets<Image>>,
 ) {
     loading_images.0.retain(|&(id, dimension, format)| {
-        if asset_server.load_state(id) == LoadState::Loaded {
+        if asset_server.load_state(id).is_loaded() {
             let image = images.get_mut(id).unwrap();
             image.texture_descriptor.dimension = dimension;
             image.texture_descriptor.format = format;
