@@ -128,7 +128,7 @@ impl AtlasBufferInfo {
         texture: &'a Texture,
         index: u32,
         mip_level: u32,
-    ) -> TexelCopyTextureInfo {
+    ) -> TexelCopyTextureInfo<'a> {
         TexelCopyTextureInfo {
             texture,
             mip_level,
@@ -140,7 +140,7 @@ impl AtlasBufferInfo {
         }
     }
 
-    fn image_copy_buffer<'a>(&'a self, buffer: &'a Buffer, index: u32) -> TexelCopyBufferInfo {
+    fn image_copy_buffer<'a>(&'a self, buffer: &'a Buffer, index: u32) -> TexelCopyBufferInfo<'a> {
         TexelCopyBufferInfo {
             buffer,
             layout: TexelCopyBufferLayout {

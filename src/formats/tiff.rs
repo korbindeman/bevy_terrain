@@ -1,5 +1,5 @@
 use bevy::{
-    asset::{io::Reader, AssetLoader, AsyncReadExt, LoadContext, RenderAssetUsages},
+    asset::{io::Reader, AssetLoader, LoadContext, RenderAssetUsages},
     image::TextureError,
     prelude::*,
     render::render_resource::{Extent3d, TextureDimension, TextureFormat},

@@ -91,10 +91,10 @@ impl TilingPrepassItem {
         &'a self,
         pipeline_cache: &'a PipelineCache,
     ) -> Option<(
-        &ComputePipeline,
-        &ComputePipeline,
-        &ComputePipeline,
-        &ComputePipeline,
+        &'a ComputePipeline,
+        &'a ComputePipeline,
+        &'a ComputePipeline,
+        &'a ComputePipeline,
     )> {
         Some((
             pipeline_cache.get_compute_pipeline(self.refine_tiles_pipeline)?,

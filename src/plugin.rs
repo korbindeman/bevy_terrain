@@ -18,7 +18,6 @@ use crate::{
     terrain_view::TerrainViewComponents,
 };
 use bevy::{
-    camera::visibility::{check_visibility, VisibilitySystems},
     prelude::*,
     render::{
         graph::CameraDriverLabel, render_graph::RenderGraph, render_resource::*, Render, RenderApp,
@@ -37,14 +36,6 @@ impl Plugin for TerrainPlugin {
         app.init_resource::<InternalShaders>()
             .init_resource::<TerrainViewComponents<TileTree>>()
             .init_resource::<TerrainViewComponents<TerrainModelApproximation>>()
-            .add_systems(
-                PostUpdate,
-                // TODO(bevy 0.18 migration): `check_visibility` is no longer generic on a query
-                // filter. Bevy 0.18 runs visibility checks per render-marker component; the
-                // terrain entity should use one of the existing markers (e.g. `RenderMesh`) or
-                // a custom marker registered via `app.register_required_components`.
-                check_visibility.in_set(VisibilitySystems::CheckVisibility),
-            )
             .add_systems(
                 Last,
                 (
