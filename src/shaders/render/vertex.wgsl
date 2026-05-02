@@ -5,7 +5,7 @@
 #import bevy_terrain::functions::{lookup_tile, compute_tile_uv, compute_local_position, compute_relative_position, compute_morph, compute_blend, normal_local_to_world, position_local_to_world}
 #import bevy_terrain::attachments::{sample_height}
 #import bevy_pbr::mesh_view_bindings::view
-#import bevy_pbr::view_transformations::position_world_to_clip
+#import bevy_render::view::position_world_to_clip
 
 struct VertexInput {
     @builtin(vertex_index) vertex_index: u32,
@@ -74,7 +74,7 @@ fn vertex_output(info: ptr<function, VertexInfo>, height: f32) -> VertexOutput {
     let world_position = (*info).world_position + height * (*info).world_normal;
 
     var output: VertexOutput;
-    output.clip_position  = position_world_to_clip(world_position);
+    output.clip_position  = position_world_to_clip(world_position, view.clip_from_world);
     output.tile_index     = (*info).tile_index;
     output.coordinate_uv  = (*info).coordinate.uv;
     output.world_position = vec4<f32>(world_position, 1.0);

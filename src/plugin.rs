@@ -5,8 +5,8 @@ use crate::{
         terrain_bind_group::TerrainData,
         terrain_view_bind_group::TerrainViewData,
         tiling_prepass::{
-            queue_tiling_prepass, TilingPrepassItem, TilingPrepassLabel, TilingPrepassNode,
-            TilingPrepassPipelines,
+            init_tiling_prepass_pipelines, queue_tiling_prepass, TilingPrepassItem,
+            TilingPrepassLabel, TilingPrepassNode, TilingPrepassPipelines,
         },
     },
     shaders::{load_terrain_shaders, InternalShaders},
@@ -21,7 +21,7 @@ use bevy::{
     prelude::*,
     render::{
         graph::CameraDriverLabel, render_graph::RenderGraph, render_resource::*, Render, RenderApp,
-        RenderSystems,
+        RenderStartup, RenderSystems,
     },
 };
 
@@ -55,6 +55,8 @@ impl Plugin for TerrainPlugin {
             .init_resource::<TerrainViewComponents<TerrainViewData>>()
             .init_resource::<TerrainViewComponents<CullingBindGroup>>()
             .init_resource::<TerrainViewComponents<TilingPrepassItem>>()
+            .init_resource::<SpecializedComputePipelines<TilingPrepassPipelines>>()
+            .add_systems(RenderStartup, init_tiling_prepass_pipelines)
             .add_systems(
                 ExtractSchedule,
                 (
@@ -90,12 +92,10 @@ impl Plugin for TerrainPlugin {
     fn finish(&self, app: &mut App) {
         load_terrain_shaders(app);
 
-        let render_app = app
+        let mut render_graph = app
             .sub_app_mut(RenderApp)
-            .init_resource::<TilingPrepassPipelines>()
-            .init_resource::<SpecializedComputePipelines<TilingPrepassPipelines>>();
-
-        let mut render_graph = render_app.world_mut().resource_mut::<RenderGraph>();
+            .world_mut()
+            .resource_mut::<RenderGraph>();
         render_graph.add_node(TilingPrepassLabel, TilingPrepassNode);
         render_graph.add_node_edge(TilingPrepassLabel, CameraDriverLabel);
     }

@@ -46,7 +46,7 @@ use bevy::{
         },
         render_resource::*,
         view::{ExtractedView, RenderVisibleEntities},
-        Render, RenderApp, RenderSystems,
+        Render, RenderApp, RenderStartup, RenderSystems,
     },
     shader::{ShaderDefVal, ShaderRef},
 };
@@ -263,44 +263,47 @@ pub struct TerrainRenderPipeline<M: Material> {
     marker: PhantomData<M>,
 }
 
-impl<M: Material> FromWorld for TerrainRenderPipeline<M> {
-    fn from_world(world: &mut World) -> Self {
-        let asset_server = world.resource::<AssetServer>();
-        let mesh_view_layouts = world.resource::<MeshPipelineViewLayouts>();
-        let render_device = world.resource::<RenderDevice>();
+/// Initializes the [`TerrainRenderPipeline<M>`] resource. Runs as a [`RenderStartup`] system
+/// instead of through [`Plugin::finish`] + [`FromWorld`] so that resource availability
+/// (specifically [`MeshPipelineViewLayouts`], which is itself populated in
+/// [`MeshRenderPlugin::finish`]) doesn't depend on plugin registration order.
+pub fn init_terrain_render_pipeline<M: Material>(
+    mut commands: Commands,
+    asset_server: Res<AssetServer>,
+    mesh_view_layouts: Res<MeshPipelineViewLayouts>,
+    render_device: Res<RenderDevice>,
+) {
+    let view_layout = mesh_view_layouts
+        .get_view_layout(MeshPipelineViewLayoutKey::empty())
+        .main_layout
+        .clone();
+    let view_layout_multisampled = mesh_view_layouts
+        .get_view_layout(MeshPipelineViewLayoutKey::MULTISAMPLED)
+        .main_layout
+        .clone();
+    let material_layout = M::bind_group_layout_descriptor(&render_device);
 
-        let view_layout = mesh_view_layouts
-            .get_view_layout(MeshPipelineViewLayoutKey::empty())
-            .main_layout
-            .clone();
-        let view_layout_multisampled = mesh_view_layouts
-            .get_view_layout(MeshPipelineViewLayoutKey::MULTISAMPLED)
-            .main_layout
-            .clone();
-        let material_layout = M::bind_group_layout_descriptor(render_device);
+    let vertex_shader = match M::vertex_shader() {
+        ShaderRef::Default => asset_server.load(DEFAULT_VERTEX_SHADER),
+        ShaderRef::Handle(handle) => handle,
+        ShaderRef::Path(path) => asset_server.load(path),
+    };
+    let fragment_shader = match M::fragment_shader() {
+        ShaderRef::Default => asset_server.load(DEFAULT_FRAGMENT_SHADER),
+        ShaderRef::Handle(handle) => handle,
+        ShaderRef::Path(path) => asset_server.load(path),
+    };
 
-        let vertex_shader = match M::vertex_shader() {
-            ShaderRef::Default => asset_server.load(DEFAULT_VERTEX_SHADER),
-            ShaderRef::Handle(handle) => handle,
-            ShaderRef::Path(path) => asset_server.load(path),
-        };
-        let fragment_shader = match M::fragment_shader() {
-            ShaderRef::Default => asset_server.load(DEFAULT_FRAGMENT_SHADER),
-            ShaderRef::Handle(handle) => handle,
-            ShaderRef::Path(path) => asset_server.load(path),
-        };
-
-        Self {
-            view_layout,
-            view_layout_multisampled,
-            terrain_layout: terrain_layout_descriptor(),
-            terrain_view_layout: terrain_view_layout_descriptor(),
-            material_layout,
-            vertex_shader,
-            fragment_shader,
-            marker: PhantomData,
-        }
-    }
+    commands.insert_resource(TerrainRenderPipeline::<M> {
+        view_layout,
+        view_layout_multisampled,
+        terrain_layout: terrain_layout_descriptor(),
+        terrain_view_layout: terrain_view_layout_descriptor(),
+        material_layout,
+        vertex_shader,
+        fragment_shader,
+        marker: PhantomData,
+    });
 }
 
 impl<M: Material> SpecializedRenderPipeline for TerrainRenderPipeline<M>
@@ -509,16 +512,10 @@ where
 
         if let Some(render_app) = app.get_sub_app_mut(RenderApp) {
             render_app
+                .init_resource::<SpecializedRenderPipelines<TerrainRenderPipeline<M>>>()
                 .add_render_command::<Opaque3d, DrawTerrain>()
+                .add_systems(RenderStartup, init_terrain_render_pipeline::<M>)
                 .add_systems(Render, queue_terrain::<M>.in_set(RenderSystems::QueueMeshes));
-        }
-    }
-
-    fn finish(&self, app: &mut App) {
-        if let Some(render_app) = app.get_sub_app_mut(RenderApp) {
-            render_app
-                .init_resource::<TerrainRenderPipeline<M>>()
-                .init_resource::<SpecializedRenderPipelines<TerrainRenderPipeline<M>>>();
         }
     }
 }

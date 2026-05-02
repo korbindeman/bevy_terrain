@@ -115,19 +115,18 @@ pub struct TilingPrepassPipelines {
     refine_tiles_shader: Handle<Shader>,
 }
 
-impl FromWorld for TilingPrepassPipelines {
-    fn from_world(world: &mut World) -> Self {
-        let asset_server = world.resource::<AssetServer>();
-
-        TilingPrepassPipelines {
-            prepare_indirect_layout: prepare_indirect_layout_descriptor(),
-            refine_tiles_layout: refine_tiles_layout_descriptor(),
-            culling_data_layout: culling_layout_descriptor(),
-            terrain_layout: terrain_layout_descriptor(),
-            prepare_prepass_shader: asset_server.load(PREPARE_PREPASS_SHADER),
-            refine_tiles_shader: asset_server.load(REFINE_TILES_SHADER),
-        }
-    }
+/// Initializes the [`TilingPrepassPipelines`] resource. Runs as a [`RenderStartup`] system
+/// (consistent with the rest of `bevy_pbr`'s 0.18+ pipeline initialization) instead of the older
+/// [`Plugin::finish`] + [`FromWorld`] pattern.
+pub fn init_tiling_prepass_pipelines(mut commands: Commands, asset_server: Res<AssetServer>) {
+    commands.insert_resource(TilingPrepassPipelines {
+        prepare_indirect_layout: prepare_indirect_layout_descriptor(),
+        refine_tiles_layout: refine_tiles_layout_descriptor(),
+        culling_data_layout: culling_layout_descriptor(),
+        terrain_layout: terrain_layout_descriptor(),
+        prepare_prepass_shader: asset_server.load(PREPARE_PREPASS_SHADER),
+        refine_tiles_shader: asset_server.load(REFINE_TILES_SHADER),
+    });
 }
 
 impl SpecializedComputePipeline for TilingPrepassPipelines {
