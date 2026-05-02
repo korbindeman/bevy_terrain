@@ -1,9 +1,9 @@
 use crate::{
     debug::DebugTerrain,
     render::{
-        terrain_bind_group::{create_terrain_layout, SetTerrainBindGroup},
+        terrain_bind_group::{terrain_layout_descriptor, SetTerrainBindGroup},
         terrain_view_bind_group::{
-            create_terrain_view_layout, DrawTerrainCommand, SetTerrainViewBindGroup,
+            terrain_view_layout_descriptor, DrawTerrainCommand, SetTerrainViewBindGroup,
         },
     },
     shaders::{DEFAULT_FRAGMENT_SHADER, DEFAULT_VERTEX_SHADER},
@@ -254,13 +254,20 @@ impl TerrainPipelineFlags {
 }
 
 /// The pipeline used to render the terrain entities.
+///
+/// In Bevy 0.18 pipeline `layout`s are described with [`BindGroupLayoutDescriptor`]s; the actual
+/// [`BindGroupLayout`]s are resolved on demand from the `PipelineCache` at bind-group-creation
+/// time. The view layout (slot 0) and material layout (slot 3) still need to be threaded in via
+/// the new `MaterialPipeline` / `MeshPipelineViewLayouts` resources - that is the Phase 3
+/// rewrite. For now, the terrain and terrain-view layout descriptors (slots 1 and 2) are the
+/// only ones populated.
 #[derive(Resource)]
 pub struct TerrainRenderPipeline<M: Material> {
-    pub(crate) view_layout: BindGroupLayout,
-    pub(crate) view_layout_multisampled: BindGroupLayout,
-    pub(crate) terrain_layout: BindGroupLayout,
-    pub(crate) terrain_view_layout: BindGroupLayout,
-    pub(crate) material_layout: BindGroupLayout,
+    pub(crate) view_layout: BindGroupLayoutDescriptor,
+    pub(crate) view_layout_multisampled: BindGroupLayoutDescriptor,
+    pub(crate) terrain_layout: BindGroupLayoutDescriptor,
+    pub(crate) terrain_view_layout: BindGroupLayoutDescriptor,
+    pub(crate) material_layout: BindGroupLayoutDescriptor,
     pub vertex_shader: Handle<Shader>,
     pub fragment_shader: Handle<Shader>,
     marker: PhantomData<M>,
@@ -268,38 +275,30 @@ pub struct TerrainRenderPipeline<M: Material> {
 
 impl<M: Material> FromWorld for TerrainRenderPipeline<M> {
     fn from_world(world: &mut World) -> Self {
-        // TODO(bevy 0.18 migration): rebuild this against the new MaterialPipeline.
-        // - `MeshPipeline::get_view_layout(...)` now returns `&MeshPipelineViewLayout`,
-        //   whose `main_layout`/`binding_array_layout` are `BindGroupLayoutDescriptor`s.
-        // - `M::bind_group_layout(device)` is gone; use `M::bind_group_layout_descriptor(device)`
-        //   and resolve via the pipeline cache (`pipeline_cache.get_bind_group_layout(&desc)`).
-        let device = world.resource::<RenderDevice>();
+        // TODO(bevy 0.18 migration): the view layout (slot 0) and material layout (slot 3) need
+        // to come from the new `MeshPipelineViewLayouts` and `M::bind_group_layout_descriptor`
+        // respectively. They are stubbed out here as empty descriptors so the pipeline struct
+        // compiles; restoring them is part of the Phase 3 Material rewrite.
         let asset_server = world.resource::<AssetServer>();
 
-        let placeholder_layout = device.create_bind_group_layout(None, &[]);
-        let terrain_layout = create_terrain_layout(device);
-        let terrain_view_layout = create_terrain_view_layout(device);
-
-        let vertex_shader = match M::vertex_shader() {
-            ShaderRef::Default => asset_server.load(DEFAULT_VERTEX_SHADER),
-            ShaderRef::Handle(handle) => handle,
-            ShaderRef::Path(path) => asset_server.load(path),
-        };
-
-        let fragment_shader = match M::fragment_shader() {
-            ShaderRef::Default => asset_server.load(DEFAULT_FRAGMENT_SHADER),
-            ShaderRef::Handle(handle) => handle,
-            ShaderRef::Path(path) => asset_server.load(path),
-        };
+        let empty_layout = BindGroupLayoutDescriptor::new("placeholder", &[]);
 
         Self {
-            view_layout: placeholder_layout.clone(),
-            view_layout_multisampled: placeholder_layout.clone(),
-            terrain_layout,
-            terrain_view_layout,
-            material_layout: placeholder_layout,
-            vertex_shader,
-            fragment_shader,
+            view_layout: empty_layout.clone(),
+            view_layout_multisampled: empty_layout.clone(),
+            terrain_layout: terrain_layout_descriptor(),
+            terrain_view_layout: terrain_view_layout_descriptor(),
+            material_layout: empty_layout,
+            vertex_shader: match M::vertex_shader() {
+                ShaderRef::Default => asset_server.load(DEFAULT_VERTEX_SHADER),
+                ShaderRef::Handle(handle) => handle,
+                ShaderRef::Path(path) => asset_server.load(path),
+            },
+            fragment_shader: match M::fragment_shader() {
+                ShaderRef::Default => asset_server.load(DEFAULT_FRAGMENT_SHADER),
+                ShaderRef::Handle(handle) => handle,
+                ShaderRef::Path(path) => asset_server.load(path),
+            },
             marker: PhantomData,
         }
     }
@@ -312,16 +311,18 @@ where
     type Key = TerrainPipelineKey<M>;
 
     fn specialize(&self, key: Self::Key) -> RenderPipelineDescriptor {
-        // TODO(bevy 0.18 migration): the descriptor's `layout` is now
-        // `Vec<BindGroupLayoutDescriptor>` (resolved by the pipeline cache), and entry points
-        // are `Option<Cow<...>>`. The actual layouts also need to be obtained via
-        // `M::bind_group_layout_descriptor` and `MeshPipelineViewLayout` instead of stored
-        // `BindGroupLayout` handles. This stub keeps the function compiling so the rest of
-        // the crate can build, but it does NOT produce a working pipeline.
         let mut shader_defs = key.flags.shader_defs();
-        if key.flags.msaa_samples() != 1 {
-            shader_defs.push("MULTISAMPLED".into());
-        }
+
+        let mut layout = match key.flags.msaa_samples() {
+            1 => vec![self.view_layout.clone()],
+            _ => {
+                shader_defs.push("MULTISAMPLED".into());
+                vec![self.view_layout_multisampled.clone()]
+            }
+        };
+        layout.push(self.terrain_layout.clone());
+        layout.push(self.terrain_view_layout.clone());
+        layout.push(self.material_layout.clone());
 
         let vertex_shader_defs = shader_defs.clone();
         let mut fragment_shader_defs = shader_defs;
@@ -329,7 +330,7 @@ where
 
         RenderPipelineDescriptor {
             label: None,
-            layout: default(),
+            layout,
             push_constant_ranges: default(),
             vertex: VertexState {
                 shader: self.vertex_shader.clone(),

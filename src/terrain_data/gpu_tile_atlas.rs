@@ -27,9 +27,10 @@ fn align_byte_size(value: u32) -> u32 {
     value - 1 - (value - 1) % COPY_BYTES_PER_ROW_ALIGNMENT + COPY_BYTES_PER_ROW_ALIGNMENT
 }
 
-pub(crate) fn create_attachment_layout(device: &RenderDevice) -> BindGroupLayout {
-    device.create_bind_group_layout(
-        None,
+/// Descriptor for the per-attachment bind group used by the preprocess compute pipelines.
+pub(crate) fn attachment_layout_descriptor() -> BindGroupLayoutDescriptor {
+    BindGroupLayoutDescriptor::new(
+        "attachment_layout",
         &BindGroupLayoutEntries::sequential(
             ShaderStages::COMPUTE,
             (
@@ -194,6 +195,7 @@ pub(crate) struct GpuAtlasAttachment {
 impl GpuAtlasAttachment {
     pub(crate) fn new(
         device: &RenderDevice,
+        pipeline_cache: &PipelineCache,
         attachment: &AtlasAttachment,
         tile_atlas: &TileAtlas,
     ) -> Self {
@@ -248,9 +250,11 @@ impl GpuAtlasAttachment {
             BufferUsages::UNIFORM,
         );
 
+        let attachment_layout =
+            pipeline_cache.get_bind_group_layout(&attachment_layout_descriptor());
         let bind_group = device.create_bind_group(
             format!("{name}attachment_bind_group").as_str(),
-            &create_attachment_layout(device),
+            &attachment_layout,
             &BindGroupEntries::sequential((
                 &atlas_write_section,
                 &atlas_view,
@@ -425,11 +429,17 @@ pub struct GpuTileAtlas {
 
 impl GpuTileAtlas {
     /// Creates a new gpu tile atlas and initializes its attachment textures.
-    fn new(device: &RenderDevice, tile_atlas: &TileAtlas) -> Self {
+    fn new(
+        device: &RenderDevice,
+        pipeline_cache: &PipelineCache,
+        tile_atlas: &TileAtlas,
+    ) -> Self {
         let attachments = tile_atlas
             .attachments
             .iter()
-            .map(|attachment| GpuAtlasAttachment::new(device, attachment, tile_atlas))
+            .map(|attachment| {
+                GpuAtlasAttachment::new(device, pipeline_cache, attachment, tile_atlas)
+            })
             .collect_vec();
 
         Self {
@@ -441,11 +451,15 @@ impl GpuTileAtlas {
     /// Initializes the [`GpuTileAtlas`] of newly created terrains.
     pub(crate) fn initialize(
         device: Res<RenderDevice>,
+        pipeline_cache: Res<PipelineCache>,
         mut gpu_tile_atlases: ResMut<TerrainComponents<GpuTileAtlas>>,
         mut tile_atlases: Extract<Query<(Entity, &TileAtlas), Added<TileAtlas>>>,
     ) {
         for (terrain, tile_atlas) in tile_atlases.iter_mut() {
-            gpu_tile_atlases.insert(terrain, GpuTileAtlas::new(&device, tile_atlas));
+            gpu_tile_atlases.insert(
+                terrain,
+                GpuTileAtlas::new(&device, &pipeline_cache, tile_atlas),
+            );
         }
     }
 

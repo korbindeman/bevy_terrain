@@ -12,9 +12,11 @@ use bevy::{
 };
 use std::ops::Deref;
 
-pub(crate) fn create_culling_layout(device: &RenderDevice) -> BindGroupLayout {
-    device.create_bind_group_layout(
-        None,
+/// Descriptor for the culling bind group layout. Resolved to a [`BindGroupLayout`]
+/// via [`PipelineCache::get_bind_group_layout`] at bind-group creation time.
+pub(crate) fn culling_layout_descriptor() -> BindGroupLayoutDescriptor {
+    BindGroupLayoutDescriptor::new(
+        "culling_layout",
         &BindGroupLayoutEntries::single(
             ShaderStages::COMPUTE,
             uniform_buffer::<CullingUniform>(false), // culling data
@@ -67,7 +69,11 @@ impl Deref for CullingBindGroup {
 }
 
 impl CullingBindGroup {
-    fn new(device: &RenderDevice, culling_uniform: CullingUniform) -> Self {
+    fn new(
+        device: &RenderDevice,
+        pipeline_cache: &PipelineCache,
+        culling_uniform: CullingUniform,
+    ) -> Self {
         let culling_buffer = StaticBuffer::<CullingUniform>::create(
             None,
             device,
@@ -75,9 +81,10 @@ impl CullingBindGroup {
             BufferUsages::UNIFORM,
         );
 
+        let layout = pipeline_cache.get_bind_group_layout(&culling_layout_descriptor());
         let bind_group = device.create_bind_group(
             None,
-            &create_culling_layout(device),
+            &layout,
             &BindGroupEntries::single(&culling_buffer),
         );
 
@@ -86,6 +93,7 @@ impl CullingBindGroup {
 
     pub(crate) fn prepare(
         device: Res<RenderDevice>,
+        pipeline_cache: Res<PipelineCache>,
         gpu_tile_trees: Res<TerrainViewComponents<GpuTileTree>>,
         extracted_views: Query<&ExtractedView>,
         mut culling_bind_groups: ResMut<TerrainViewComponents<CullingBindGroup>>,
@@ -95,7 +103,7 @@ impl CullingBindGroup {
 
             culling_bind_groups.insert(
                 (terrain, view),
-                CullingBindGroup::new(&device, extracted_view.into()),
+                CullingBindGroup::new(&device, &pipeline_cache, extracted_view.into()),
             );
         }
     }

@@ -18,9 +18,10 @@ use bevy::{
     },
 };
 
-pub(crate) fn create_prepare_indirect_layout(device: &RenderDevice) -> BindGroupLayout {
-    device.create_bind_group_layout(
-        None,
+/// Descriptor for the indirect-buffer bind group used by the prepare-prepass compute pass.
+pub(crate) fn prepare_indirect_layout_descriptor() -> BindGroupLayoutDescriptor {
+    BindGroupLayoutDescriptor::new(
+        "prepare_indirect_layout",
         &BindGroupLayoutEntries::single(
             ShaderStages::COMPUTE,
             storage_buffer::<Indirect>(false), // indirect buffer
@@ -28,9 +29,10 @@ pub(crate) fn create_prepare_indirect_layout(device: &RenderDevice) -> BindGroup
     )
 }
 
-pub(crate) fn create_refine_tiles_layout(device: &RenderDevice) -> BindGroupLayout {
-    device.create_bind_group_layout(
-        None,
+/// Descriptor for the refine-tiles bind group used by the tiling-prepass compute pipelines.
+pub(crate) fn refine_tiles_layout_descriptor() -> BindGroupLayoutDescriptor {
+    BindGroupLayoutDescriptor::new(
+        "refine_tiles_layout",
         &BindGroupLayoutEntries::sequential(
             ShaderStages::COMPUTE,
             (
@@ -46,9 +48,10 @@ pub(crate) fn create_refine_tiles_layout(device: &RenderDevice) -> BindGroupLayo
     )
 }
 
-pub(crate) fn create_terrain_view_layout(device: &RenderDevice) -> BindGroupLayout {
-    device.create_bind_group_layout(
-        None,
+/// Descriptor for the per-view bind group used by the terrain render pipeline.
+pub(crate) fn terrain_view_layout_descriptor() -> BindGroupLayoutDescriptor {
+    BindGroupLayoutDescriptor::new(
+        "terrain_view_layout",
         &BindGroupLayoutEntries::sequential(
             ShaderStages::VERTEX_FRAGMENT,
             (
@@ -125,7 +128,12 @@ pub struct TerrainViewData {
 }
 
 impl TerrainViewData {
-    fn new(device: &RenderDevice, tile_tree: &TileTree, gpu_tile_tree: &GpuTileTree) -> Self {
+    fn new(
+        device: &RenderDevice,
+        pipeline_cache: &PipelineCache,
+        tile_tree: &TileTree,
+        gpu_tile_tree: &GpuTileTree,
+    ) -> Self {
         // Todo: figure out a better way of limiting the tile buffer size
         let tile_buffer_size =
             TileCoordinate::min_size().get() * tile_tree.geometry_tile_count as BufferAddress;
@@ -146,14 +154,21 @@ impl TerrainViewData {
             BufferUsages::UNIFORM | BufferUsages::COPY_DST,
         );
 
+        let prepare_indirect_layout =
+            pipeline_cache.get_bind_group_layout(&prepare_indirect_layout_descriptor());
+        let refine_tiles_layout =
+            pipeline_cache.get_bind_group_layout(&refine_tiles_layout_descriptor());
+        let terrain_view_layout =
+            pipeline_cache.get_bind_group_layout(&terrain_view_layout_descriptor());
+
         let prepare_indirect_bind_group = device.create_bind_group(
             "prepare_indirect_bind_group",
-            &create_prepare_indirect_layout(device),
+            &prepare_indirect_layout,
             &BindGroupEntries::single(&indirect_buffer),
         );
         let refine_tiles_bind_group = device.create_bind_group(
             "refine_tiles_bind_group",
-            &create_refine_tiles_layout(device),
+            &refine_tiles_layout,
             &BindGroupEntries::sequential((
                 &view_config_buffer,
                 &terrain_model_approximation_buffer,
@@ -166,7 +181,7 @@ impl TerrainViewData {
         );
         let terrain_view_bind_group = device.create_bind_group(
             "terrain_view_bind_group",
-            &create_terrain_view_layout(device),
+            &terrain_view_layout,
             &BindGroupEntries::sequential((
                 &view_config_buffer,
                 &terrain_model_approximation_buffer,
@@ -192,6 +207,7 @@ impl TerrainViewData {
 
     pub(crate) fn initialize(
         device: Res<RenderDevice>,
+        pipeline_cache: Res<PipelineCache>,
         mut terrain_view_data: ResMut<TerrainViewComponents<TerrainViewData>>,
         gpu_tile_trees: Res<TerrainViewComponents<GpuTileTree>>,
         tile_trees: Extract<Res<TerrainViewComponents<TileTree>>>,
@@ -205,7 +221,7 @@ impl TerrainViewData {
 
             terrain_view_data.insert(
                 (terrain, view),
-                TerrainViewData::new(&device, tile_tree, gpu_tile_tree),
+                TerrainViewData::new(&device, &pipeline_cache, tile_tree, gpu_tile_tree),
             );
         }
     }

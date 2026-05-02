@@ -2,13 +2,14 @@ use crate::{
     formats::tiff::TiffLoader,
     preprocess::{
         gpu_preprocessor::{
-            create_downsample_layout, create_split_layout, create_stitch_layout, GpuPreprocessor,
+            downsample_layout_descriptor, split_layout_descriptor, stitch_layout_descriptor,
+            GpuPreprocessor,
         },
         preprocessor::{preprocessor_load_tile, select_ready_tasks, PreprocessTaskType},
     },
     shaders::{load_preprocess_shaders, DOWNSAMPLE_SHADER, SPLIT_SHADER, STITCH_SHADER},
     terrain::TerrainComponents,
-    terrain_data::gpu_tile_atlas::{create_attachment_layout, GpuTileAtlas},
+    terrain_data::gpu_tile_atlas::{attachment_layout_descriptor, GpuTileAtlas},
 };
 use bevy::{
     prelude::*,
@@ -63,10 +64,10 @@ impl TerrainPreprocessItem {
 
 #[derive(Resource)]
 pub struct TerrainPreprocessPipelines {
-    attachment_layout: BindGroupLayout,
-    split_layout: BindGroupLayout,
-    stitch_layout: BindGroupLayout,
-    downsample_layout: BindGroupLayout,
+    attachment_layout: BindGroupLayoutDescriptor,
+    split_layout: BindGroupLayoutDescriptor,
+    stitch_layout: BindGroupLayoutDescriptor,
+    downsample_layout: BindGroupLayoutDescriptor,
     split_shader: Handle<Shader>,
     stitch_shader: Handle<Shader>,
     downsample_shader: Handle<Shader>,
@@ -74,26 +75,16 @@ pub struct TerrainPreprocessPipelines {
 
 impl FromWorld for TerrainPreprocessPipelines {
     fn from_world(world: &mut World) -> Self {
-        let device = world.resource::<RenderDevice>();
         let asset_server = world.resource::<AssetServer>();
 
-        let attachment_layout = create_attachment_layout(device);
-        let split_layout = create_split_layout(device);
-        let stitch_layout = create_stitch_layout(device);
-        let downsample_layout = create_downsample_layout(device);
-
-        let split_shader = asset_server.load(SPLIT_SHADER);
-        let stitch_shader = asset_server.load(STITCH_SHADER);
-        let downsample_shader = asset_server.load(DOWNSAMPLE_SHADER);
-
         Self {
-            attachment_layout,
-            split_layout,
-            stitch_layout,
-            downsample_layout,
-            split_shader,
-            stitch_shader,
-            downsample_shader,
+            attachment_layout: attachment_layout_descriptor(),
+            split_layout: split_layout_descriptor(),
+            stitch_layout: stitch_layout_descriptor(),
+            downsample_layout: downsample_layout_descriptor(),
+            split_shader: asset_server.load(SPLIT_SHADER),
+            stitch_shader: asset_server.load(STITCH_SHADER),
+            downsample_shader: asset_server.load(DOWNSAMPLE_SHADER),
         }
     }
 }
@@ -101,18 +92,37 @@ impl FromWorld for TerrainPreprocessPipelines {
 impl SpecializedComputePipeline for TerrainPreprocessPipelines {
     type Key = TerrainPreprocessPipelineKey;
 
-    fn specialize(&self, _key: Self::Key) -> ComputePipelineDescriptor {
-        // TODO(bevy 0.18 migration): pipeline `layout` is now `Vec<BindGroupLayoutDescriptor>`
-        // and `entry_point` is `Option<Cow<'static, str>>`. The bind group layout fields here are
-        // owned `BindGroupLayout` handles, so they need to be replaced with descriptors (or looked
-        // up via `pipeline_cache.get_bind_group_layout`) before this can be re-enabled.
+    fn specialize(&self, key: Self::Key) -> ComputePipelineDescriptor {
+        let mut layout: Vec<BindGroupLayoutDescriptor> = default();
+        let mut shader: Handle<Shader> = default();
+        let mut entry_point: Option<std::borrow::Cow<'static, str>> = None;
+
+        if key.contains(TerrainPreprocessPipelineKey::SPLIT) {
+            layout = vec![self.attachment_layout.clone(), self.split_layout.clone()];
+            shader = self.split_shader.clone();
+            entry_point = Some("split".into());
+        }
+        if key.contains(TerrainPreprocessPipelineKey::STITCH) {
+            layout = vec![self.attachment_layout.clone(), self.stitch_layout.clone()];
+            shader = self.stitch_shader.clone();
+            entry_point = Some("stitch".into());
+        }
+        if key.contains(TerrainPreprocessPipelineKey::DOWNSAMPLE) {
+            layout = vec![
+                self.attachment_layout.clone(),
+                self.downsample_layout.clone(),
+            ];
+            shader = self.downsample_shader.clone();
+            entry_point = Some("downsample".into());
+        }
+
         ComputePipelineDescriptor {
             label: Some("terrain_preprocess_pipeline".into()),
-            layout: default(),
+            layout,
             push_constant_ranges: default(),
-            shader: default(),
+            shader,
             shader_defs: vec![],
-            entry_point: None,
+            entry_point,
             zero_initialize_workgroup_memory: false,
         }
     }

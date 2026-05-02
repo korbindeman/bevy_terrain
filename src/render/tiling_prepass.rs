@@ -2,10 +2,10 @@ use crate::terrain_data::gpu_tile_tree::GpuTileTree;
 use crate::{
     debug::DebugTerrain,
     render::{
-        culling_bind_group::{create_culling_layout, CullingBindGroup},
-        terrain_bind_group::{create_terrain_layout, TerrainData},
+        culling_bind_group::{culling_layout_descriptor, CullingBindGroup},
+        terrain_bind_group::{terrain_layout_descriptor, TerrainData},
         terrain_view_bind_group::{
-            create_prepare_indirect_layout, create_refine_tiles_layout, TerrainViewData,
+            prepare_indirect_layout_descriptor, refine_tiles_layout_descriptor, TerrainViewData,
         },
     },
     shaders::{PREPARE_PREPASS_SHADER, REFINE_TILES_SHADER},
@@ -107,34 +107,25 @@ impl TilingPrepassItem {
 
 #[derive(Resource)]
 pub struct TilingPrepassPipelines {
-    pub(crate) prepare_indirect_layout: BindGroupLayout,
-    pub(crate) refine_tiles_layout: BindGroupLayout,
-    culling_data_layout: BindGroupLayout,
-    terrain_layout: BindGroupLayout,
+    pub(crate) prepare_indirect_layout: BindGroupLayoutDescriptor,
+    pub(crate) refine_tiles_layout: BindGroupLayoutDescriptor,
+    culling_data_layout: BindGroupLayoutDescriptor,
+    terrain_layout: BindGroupLayoutDescriptor,
     prepare_prepass_shader: Handle<Shader>,
     refine_tiles_shader: Handle<Shader>,
 }
 
 impl FromWorld for TilingPrepassPipelines {
     fn from_world(world: &mut World) -> Self {
-        let device = world.resource::<RenderDevice>();
         let asset_server = world.resource::<AssetServer>();
 
-        let prepare_indirect_layout = create_prepare_indirect_layout(device);
-        let refine_tiles_layout = create_refine_tiles_layout(device);
-        let culling_data_layout = create_culling_layout(device);
-        let terrain_layout = create_terrain_layout(device);
-
-        let prepare_prepass_shader = asset_server.load(PREPARE_PREPASS_SHADER);
-        let refine_tiles_shader = asset_server.load(REFINE_TILES_SHADER);
-
         TilingPrepassPipelines {
-            prepare_indirect_layout,
-            refine_tiles_layout,
-            culling_data_layout,
-            terrain_layout,
-            prepare_prepass_shader,
-            refine_tiles_shader,
+            prepare_indirect_layout: prepare_indirect_layout_descriptor(),
+            refine_tiles_layout: refine_tiles_layout_descriptor(),
+            culling_data_layout: culling_layout_descriptor(),
+            terrain_layout: terrain_layout_descriptor(),
+            prepare_prepass_shader: asset_server.load(PREPARE_PREPASS_SHADER),
+            refine_tiles_shader: asset_server.load(REFINE_TILES_SHADER),
         }
     }
 }
@@ -143,13 +134,7 @@ impl SpecializedComputePipeline for TilingPrepassPipelines {
     type Key = TilingPrepassPipelineKey;
 
     fn specialize(&self, key: Self::Key) -> ComputePipelineDescriptor {
-        // TODO(bevy 0.18 migration): pipeline descriptors now expect
-        // `Vec<BindGroupLayoutDescriptor>` for `layout`, not `Vec<BindGroupLayout>`.
-        // The bind group layouts captured in this struct are owned `BindGroupLayout`
-        // handles created via `RenderDevice::create_bind_group_layout`, which do not
-        // implement `Into<BindGroupLayoutDescriptor>`. Rewriting this requires storing
-        // the descriptors alongside the layouts, or using `pipeline_cache.get_bind_group_layout`.
-        let mut layout: Vec<BindGroupLayout> = default();
+        let mut layout: Vec<BindGroupLayoutDescriptor> = default();
         let mut shader: Handle<Shader> = default();
         let mut entry_point: Option<std::borrow::Cow<'static, str>> = None;
 
@@ -195,12 +180,9 @@ impl SpecializedComputePipeline for TilingPrepassPipelines {
             entry_point = Some("prepare_render".into());
         }
 
-        // FIXME: layout should be Vec<BindGroupLayoutDescriptor>, not Vec<BindGroupLayout>.
-        // This will not compile until the layouts are stored as descriptors.
-        let _ = layout;
         ComputePipelineDescriptor {
             label: Some("tiling_prepass_pipeline".into()),
-            layout: default(),
+            layout,
             push_constant_ranges: default(),
             shader,
             shader_defs,

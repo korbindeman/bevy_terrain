@@ -20,9 +20,10 @@ use bevy::{
 use itertools::Itertools;
 use std::iter;
 
-pub(crate) fn create_terrain_layout(device: &RenderDevice) -> BindGroupLayout {
-    device.create_bind_group_layout(
-        None,
+/// Descriptor for the terrain (per-tile-atlas) bind group layout.
+pub(crate) fn terrain_layout_descriptor() -> BindGroupLayoutDescriptor {
+    BindGroupLayoutDescriptor::new(
+        "terrain_layout",
         &BindGroupLayoutEntries::sequential(
             ShaderStages::all(),
             (
@@ -100,6 +101,7 @@ pub struct TerrainData {
 impl TerrainData {
     fn new(
         device: &RenderDevice,
+        pipeline_cache: &PipelineCache,
         fallback_image: &FallbackImage,
         tile_atlas: &TileAtlas,
         gpu_tile_atlas: &GpuTileAtlas,
@@ -140,9 +142,10 @@ impl TerrainData {
         let attachment_buffer =
             StaticBuffer::create(None, device, &attachment_uniform, BufferUsages::UNIFORM);
 
+        let terrain_layout = pipeline_cache.get_bind_group_layout(&terrain_layout_descriptor());
         let terrain_bind_group = device.create_bind_group(
             "terrain_bind_group",
-            &create_terrain_layout(device),
+            &terrain_layout,
             &BindGroupEntries::sequential((
                 &mesh_buffer,
                 &terrain_config_buffer,
@@ -167,6 +170,7 @@ impl TerrainData {
 
     pub(crate) fn initialize(
         device: Res<RenderDevice>,
+        pipeline_cache: Res<PipelineCache>,
         fallback_image: Res<FallbackImage>,
         mut terrain_data: ResMut<TerrainComponents<TerrainData>>,
         gpu_tile_atlases: Res<TerrainComponents<GpuTileAtlas>>,
@@ -177,7 +181,13 @@ impl TerrainData {
 
             terrain_data.insert(
                 terrain,
-                TerrainData::new(&device, &fallback_image, tile_atlas.into(), gpu_tile_atlas),
+                TerrainData::new(
+                    &device,
+                    &pipeline_cache,
+                    &fallback_image,
+                    tile_atlas.into(),
+                    gpu_tile_atlas,
+                ),
             );
         }
     }
