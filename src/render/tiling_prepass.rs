@@ -18,7 +18,7 @@ use bevy::{
     render::{
         render_graph::{self, RenderLabel},
         render_resource::*,
-        renderer::{RenderContext, RenderDevice},
+        renderer::RenderContext,
     },
     shader::ShaderDefVal,
 };

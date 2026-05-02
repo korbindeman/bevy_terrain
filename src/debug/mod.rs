@@ -5,7 +5,6 @@ use crate::{
     terrain_view::TerrainViewComponents,
 };
 use bevy::{
-    asset::LoadState,
     prelude::*,
     render::{render_resource::*, Extract, RenderApp},
     transform::TransformSystems,

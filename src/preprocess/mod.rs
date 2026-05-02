@@ -17,7 +17,7 @@ use bevy::{
         graph::CameraDriverLabel,
         render_graph::{self, RenderGraph, RenderLabel},
         render_resource::*,
-        renderer::{RenderContext, RenderDevice},
+        renderer::RenderContext,
         Render, RenderApp, RenderSystems,
     },
 };

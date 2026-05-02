@@ -515,7 +515,14 @@ impl TileAtlasState {
 ///
 /// The [`u32`] can be used for accessing the attached data in systems by the CPU
 /// and in shaders by the GPU.
+///
+/// `TileAtlas` doubles as the visibility marker for terrain entities: when added to an
+/// entity, the on-add hook pushes its `TypeId` into the entity's `VisibilityClass`, so
+/// the standard `check_visibility` system tracks terrains and the queue can find them
+/// via `RenderVisibleEntities::iter::<TileAtlas>()`.
 #[derive(Component)]
+#[require(bevy::camera::visibility::VisibilityClass)]
+#[component(on_add = bevy::camera::visibility::add_visibility_class::<TileAtlas>)]
 pub struct TileAtlas {
     pub(crate) attachments: Vec<AtlasAttachment>,
     // stores the attachment data
