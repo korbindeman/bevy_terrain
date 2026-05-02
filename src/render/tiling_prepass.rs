@@ -251,7 +251,7 @@ impl render_graph::Node for TilingPrepassNode {
                 let terrain_data = terrain_data.get(&terrain).unwrap();
                 let view_data = terrain_view_data.get(&(terrain, view)).unwrap();
 
-                compute_pass.set_bind_group(0, culling_bind_group, &[]);
+                compute_pass.set_bind_group(0, &**culling_bind_group, &[]);
                 compute_pass.set_bind_group(1, &terrain_data.terrain_bind_group, &[]);
                 compute_pass.set_bind_group(2, &view_data.refine_tiles_bind_group, &[]);
                 compute_pass.set_bind_group(3, &view_data.prepare_indirect_bind_group, &[]);
