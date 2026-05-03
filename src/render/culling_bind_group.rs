@@ -3,10 +3,12 @@ use crate::{
     util::StaticBuffer,
 };
 use bevy::{
+    platform::collections::HashMap,
     prelude::*,
     render::{
         render_resource::{binding_types::*, *},
         renderer::RenderDevice,
+        sync_world::MainEntity,
         view::ExtractedView,
     },
 };
@@ -95,11 +97,22 @@ impl CullingBindGroup {
         device: Res<RenderDevice>,
         pipeline_cache: Res<PipelineCache>,
         gpu_tile_trees: Res<TerrainViewComponents<GpuTileTree>>,
-        extracted_views: Query<&ExtractedView>,
+        extracted_views: Query<(&MainEntity, &ExtractedView)>,
         mut culling_bind_groups: ResMut<TerrainViewComponents<CullingBindGroup>>,
     ) {
+        // gpu_tile_trees is keyed on main-world entity IDs (extracted from the
+        // main world's TileTree resource). ExtractedView lives on render-world
+        // entities whose IDs are unstable; we bridge via the MainEntity
+        // component that points back to the main-world camera.
+        let view_by_main: HashMap<Entity, &ExtractedView> = extracted_views
+            .iter()
+            .map(|(main_entity, view)| (main_entity.id(), view))
+            .collect();
+
         for &(terrain, view) in gpu_tile_trees.keys() {
-            let extracted_view = extracted_views.get(view).unwrap();
+            let Some(&extracted_view) = view_by_main.get(&view) else {
+                continue;
+            };
 
             culling_bind_groups.insert(
                 (terrain, view),

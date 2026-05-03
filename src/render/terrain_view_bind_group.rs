@@ -7,13 +7,17 @@ use crate::{
 use bevy::{
     ecs::{
         query::ROQueryItem,
-        system::{lifetimeless::SRes, SystemParamItem},
+        system::{
+            lifetimeless::{Read, SRes},
+            SystemParamItem,
+        },
     },
     prelude::*,
     render::{
         render_phase::{PhaseItem, RenderCommand, RenderCommandResult, TrackedRenderPass},
         render_resource::{binding_types::*, *},
         renderer::{RenderDevice, RenderQueue},
+        sync_world::MainEntity,
         Extract,
     },
 };
@@ -266,7 +270,9 @@ pub struct SetTerrainViewBindGroup<const I: usize>;
 
 impl<const I: usize, P: PhaseItem> RenderCommand<P> for SetTerrainViewBindGroup<I> {
     type Param = SRes<TerrainViewComponents<TerrainViewData>>;
-    type ViewQuery = Entity;
+    // TerrainViewComponents is keyed on main-world (terrain, view) entity IDs,
+    // so resolve the render-world view to its MainEntity here.
+    type ViewQuery = Read<MainEntity>;
     type ItemQuery = ();
 
     #[inline]
@@ -279,7 +285,7 @@ impl<const I: usize, P: PhaseItem> RenderCommand<P> for SetTerrainViewBindGroup<
     ) -> RenderCommandResult {
         let data = terrain_view_data
             .into_inner()
-            .get(&(item.entity(), view))
+            .get(&(item.main_entity().id(), view.id()))
             .unwrap();
 
         pass.set_bind_group(I, &data.terrain_view_bind_group, &[]);
@@ -291,7 +297,7 @@ pub(crate) struct DrawTerrainCommand;
 
 impl<P: PhaseItem> RenderCommand<P> for DrawTerrainCommand {
     type Param = SRes<TerrainViewComponents<TerrainViewData>>;
-    type ViewQuery = Entity;
+    type ViewQuery = Read<MainEntity>;
     type ItemQuery = ();
 
     #[inline]
@@ -304,7 +310,7 @@ impl<P: PhaseItem> RenderCommand<P> for DrawTerrainCommand {
     ) -> RenderCommandResult {
         let data = terrain_view_data
             .into_inner()
-            .get(&(item.entity(), view))
+            .get(&(item.main_entity().id(), view.id()))
             .unwrap();
 
         pass.draw_indirect(&data.indirect_buffer, 0);
