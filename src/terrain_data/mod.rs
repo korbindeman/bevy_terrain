@@ -28,7 +28,10 @@ use std::iter;
 pub mod gpu_tile_atlas;
 pub mod gpu_tile_tree;
 pub mod tile_atlas;
+pub mod tile_provider;
 pub mod tile_tree;
+
+pub use tile_provider::{DiskTileProvider, TileProvider};
 
 pub const INVALID_ATLAS_INDEX: u32 = u32::MAX;
 pub const INVALID_LOD: u32 = u32::MAX;
@@ -108,8 +111,13 @@ impl Default for AttachmentConfig {
     }
 }
 
+/// The CPU-side base-mip data for a single tile attachment.
+///
+/// Variants pair with [`AttachmentFormat`]: producing data of the wrong
+/// variant for the configured format is a contract violation. Element count
+/// must equal `texture_size * texture_size`.
 #[derive(Clone)]
-pub(crate) enum AttachmentData {
+pub enum AttachmentData {
     None,
     /// Three channels  8 bit
     // Rgb8(Vec<(u8, u8, u8)>), Can not be represented currently
@@ -122,7 +130,10 @@ pub(crate) enum AttachmentData {
 }
 
 impl AttachmentData {
-    pub(crate) fn from_bytes(data: &[u8], format: AttachmentFormat) -> Self {
+    /// Decodes a flat byte buffer into the variant matching `format`. The
+    /// byte length must equal `texture_size * texture_size *
+    /// format.pixel_size()`.
+    pub fn from_bytes(data: &[u8], format: AttachmentFormat) -> Self {
         match format {
             AttachmentFormat::Rgb8 => unimplemented!(),
             AttachmentFormat::Rgba8 => Self::Rgba8(cast_slice(data).to_vec()),

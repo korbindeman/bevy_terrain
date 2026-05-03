@@ -1,11 +1,11 @@
 //! Compatibility shim re-exporting the parts of `big_space` we use.
 //!
 //! `big_space` 0.12 dropped the precision generic in favor of feature flags
-//! (`i8`/`i16`/`i32`/`i64`/`i128`). This crate enables the `i32` feature, which
-//! mirrors the previous `GridPrecision = i32`. The old `ReferenceFrame` type
-//! was renamed to [`big_space::grid::Grid`], `GridCell<P>` to
-//! [`big_space::grid::cell::CellCoord`], and the `GridTransform*` query types
-//! to `CellTransform*`.
+//! (`i8`/`i16`/`i32`/`i64`/`i128`). The consumer selects which feature to
+//! enable; with none enabled, `big_space` defaults to `i64`. The old
+//! `ReferenceFrame` type was renamed to [`big_space::grid::Grid`],
+//! `GridCell<P>` to [`big_space::grid::cell::CellCoord`], and the
+//! `GridTransform*` query types to `CellTransform*`.
 pub use big_space::commands::BigSpaceCommands;
 pub use big_space::floating_origins::FloatingOrigin;
 pub use big_space::grid::cell::CellCoord as GridCell;
@@ -18,5 +18,6 @@ pub use big_space::world_query::{
 };
 
 /// The integer precision used for grid cell coordinates. Selected by the
-/// `i32` feature on `big_space` (see Cargo.toml).
+/// consumer via `big_space`'s `i8`/`i16`/`i32`/`i64`/`i128` feature flags;
+/// defaults to `i64` if none is enabled.
 pub type GridPrecision = big_space::prelude::GridPrecision;

@@ -80,6 +80,7 @@ pub mod prelude {
         terrain::{TerrainBundle, TerrainConfig},
         terrain_data::{
             tile_atlas::TileAtlas, tile_tree::TileTree, AttachmentConfig, AttachmentFormat,
+            DiskTileProvider, TileProvider,
         },
         terrain_view::{TerrainViewComponents, TerrainViewConfig},
     };

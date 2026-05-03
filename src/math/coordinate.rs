@@ -1,6 +1,6 @@
 use crate::math::{TerrainModel, C_SQR};
 use bevy::{
-    math::{DVec2, DVec3, IVec2},
+    math::{DVec2, DVec3, IVec2, UVec2},
     render::render_resource::ShaderType,
 };
 use bincode::{Decode, Encode};
@@ -66,7 +66,7 @@ impl Coordinate {
     }
 
     /// Calculates the coordinate for for the local position on the unit cube sphere.
-    pub(crate) fn from_world_position(world_position: DVec3, model: &TerrainModel) -> Self {
+    pub fn from_world_position(world_position: DVec3, model: &TerrainModel) -> Self {
         let local_position = model.position_world_to_local(world_position);
 
         let (side, uv) = if model.is_spherical() {
@@ -107,7 +107,9 @@ impl Coordinate {
         Self { side, uv }
     }
 
-    pub(crate) fn world_position(self, model: &TerrainModel, height: f32) -> DVec3 {
+    /// Maps the cube-sphere coordinate to a world-space position on the terrain
+    /// model's surface (or offset along the surface normal by `height`).
+    pub fn world_position(self, model: &TerrainModel, height: f32) -> DVec3 {
         let local_position = if model.is_spherical() {
             let w = (self.uv - 0.5) / 0.5;
             let uv = w / (1.0 + C_SQR - C_SQR * w * w).powf(0.5);
@@ -183,6 +185,33 @@ impl TileCoordinate {
 
     pub fn path(self, path: &str, extension: &str) -> String {
         format!("{path}/{self}.{extension}")
+    }
+
+    /// Returns the cube-sphere [`Coordinate`] of the texel center for the given
+    /// `pixel` index inside a tile texture of size `texture_size` with a
+    /// `border_size`-pixel border.
+    ///
+    /// This is the canonical pixel→position mapping used by the renderer when
+    /// sampling tile data. [`TileProvider`](crate::terrain_data::TileProvider)
+    /// implementations should evaluate their data source at the world position
+    /// returned by passing this coordinate to [`Coordinate::world_position`],
+    /// so that values agree exactly across tile borders. Pixels in the border
+    /// region (outside `[border_size, texture_size - border_size)`) will lie
+    /// outside the tile's logical extent and overlap a neighbouring tile.
+    pub fn pixel_coordinate(
+        self,
+        pixel: UVec2,
+        texture_size: u32,
+        border_size: u32,
+    ) -> Coordinate {
+        let inner = (texture_size - 2 * border_size) as f64;
+        let in_tile_uv = (DVec2::new(pixel.x as f64, pixel.y as f64) + 0.5
+            - border_size as f64)
+            / inner;
+        let face_uv =
+            (DVec2::new(self.x as f64, self.y as f64) + in_tile_uv) / Self::count(self.lod) as f64;
+
+        Coordinate { side: self.side, uv: face_uv }
     }
 
     pub fn parent(self) -> Self {
