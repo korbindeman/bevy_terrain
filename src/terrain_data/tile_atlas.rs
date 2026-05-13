@@ -625,11 +625,17 @@ impl TileAtlas {
     /// Loads the tile configuration of the terrain, which stores the [`TileCoordinate`]s of all the tiles
     /// of the terrain.
     pub(crate) fn load_tile_config(path: &str) -> HashSet<TileCoordinate> {
-        if let Ok(tc) = TC::load_file(format!("assets/{}/config.tc", path)) {
-            tc.tiles.into_iter().collect()
-        } else {
-            println!("Tile config not found.");
-            HashSet::default()
+        match TC::load_file(format!("assets/{}/config.tc", path)) {
+            Ok(tc) => tc.tiles.into_iter().collect(),
+            // Missing `config.tc` is the normal case for runtime-synthesised
+            // providers (e.g. `PipelineTileProvider`); the disk path simply
+            // isn't in use. Log at `debug` so it's discoverable without
+            // spamming stdout on every terrain creation.
+            Err(_) => {
+                debug!("no preprocessed tile config at assets/{path}/config.tc; \
+                        using empty existing-tile set (expected for synthesised providers)");
+                HashSet::default()
+            }
         }
     }
 }
