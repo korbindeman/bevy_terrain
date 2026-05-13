@@ -45,7 +45,7 @@ use bevy::{
             SetItemPipeline, ViewBinnedRenderPhases,
         },
         render_resource::*,
-        view::{ExtractedView, RenderVisibleEntities},
+        view::{ExtractedView, RenderVisibleEntities, ViewTarget},
         Render, RenderApp, RenderStartup, RenderSystems,
     },
     shader::{ShaderDefVal, ShaderRef},
@@ -115,6 +115,7 @@ bitflags::bitflags! {
         const TEST1              = 1 << 14;
         const TEST2              = 1 << 15;
         const TEST3              = 1 << 16;
+        const HDR                = 1 << 17;
         const MSAA_RESERVED_BITS = TerrainPipelineFlags::MSAA_MASK_BITS << TerrainPipelineFlags::MSAA_SHIFT_BITS;
     }
 }
@@ -355,7 +356,15 @@ where
                 shader_defs: fragment_shader_defs,
                 entry_point: Some("fragment".into()),
                 targets: vec![Some(ColorTargetState {
-                    format: TextureFormat::bevy_default(),
+                    // Match the view's color target format. `ViewTarget` picks
+                    // `Rgba16Float` whenever the camera has `Hdr` enabled and
+                    // `Rgba8UnormSrgb` (== `bevy_default`) otherwise; queue_terrain
+                    // sets the `HDR` flag from `ExtractedView::hdr`.
+                    format: if key.flags.contains(TerrainPipelineFlags::HDR) {
+                        ViewTarget::TEXTURE_FORMAT_HDR
+                    } else {
+                        TextureFormat::bevy_default()
+                    },
                     blend: Some(BlendState::REPLACE),
                     write_mask: ColorWrites::ALL,
                 })],
@@ -448,6 +457,10 @@ pub(crate) fn queue_terrain<M: Material>(
 
             if gpu_tile_atlas.is_spherical {
                 flags |= TerrainPipelineFlags::SPHERICAL;
+            }
+
+            if view.hdr {
+                flags |= TerrainPipelineFlags::HDR;
             }
 
             if let Some(debug) = &debug {
