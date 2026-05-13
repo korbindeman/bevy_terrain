@@ -228,9 +228,23 @@ impl render_graph::Node for TilingPrepassNode {
                     continue;
                 };
 
-                let culling_bind_group = culling_bind_groups.get(&(terrain, view)).unwrap();
-                let terrain_data = terrain_data.get(&terrain).unwrap();
-                let view_data = terrain_view_data.get(&(terrain, view)).unwrap();
+                // `prepass_items` is a persistent resource keyed by (terrain, view) and is never
+                // cleared. `queue_tiling_prepass` enqueues an item for every entry in
+                // `gpu_tile_trees`, which also persists across frames. But the bind groups below
+                // are rebuilt each frame from per-frame state: `CullingBindGroup::prepare` skips
+                // views without an `ExtractedView` (i.e. inactive cameras like Thalos's
+                // ship-camera while the map view is active), and the terrain / view data can lag
+                // when an entity is despawned or the camera is temporarily disabled. Skip the
+                // dispatch in those frames rather than panicking on a missing entry.
+                let Some(culling_bind_group) = culling_bind_groups.get(&(terrain, view)) else {
+                    continue;
+                };
+                let Some(terrain_data) = terrain_data.get(&terrain) else {
+                    continue;
+                };
+                let Some(view_data) = terrain_view_data.get(&(terrain, view)) else {
+                    continue;
+                };
 
                 compute_pass.set_bind_group(0, &**culling_bind_group, &[]);
                 compute_pass.set_bind_group(1, &terrain_data.terrain_bind_group, &[]);

@@ -62,6 +62,18 @@ pub trait TileProvider: Send + Sync {
         model: &TerrainModel,
         attachments: &[AttachmentConfig],
     ) -> Task<Result<Vec<AttachmentData>>>;
+
+    /// Returns `true` if the provider can synthesise data for any valid
+    /// [`TileCoordinate`] — i.e. it does not depend on a pre-existing tile set.
+    ///
+    /// Disk-backed providers leave this `false` (the default): the runtime
+    /// loader then gates tile requests on the `existing_tiles` set populated
+    /// from `assets/{path}/config.tc`, so we never request tiles that have no
+    /// file on disk. Synthesised providers override this to `true` so newly
+    /// requested coordinates are loaded on demand without preprocessing.
+    fn supports_all_tiles(&self) -> bool {
+        false
+    }
 }
 
 /// [`TileProvider`] backed by tiles produced by the offline preprocess

@@ -231,6 +231,12 @@ pub(crate) struct TileAtlasState {
     tile_states: HashMap<TileCoordinate, TileState>,
     unused_tiles: VecDeque<AtlasTile>,
     pub(crate) existing_tiles: HashSet<TileCoordinate>,
+    /// When `true`, the [`TileProvider`] can synthesise data for any
+    /// [`TileCoordinate`]; tile requests bypass the `existing_tiles` gate
+    /// (which exists to keep disk providers from chasing missing `.bin`/`.png`
+    /// files). Set once at construction from
+    /// [`TileProvider::supports_all_tiles`].
+    supports_all_tiles: bool,
 
     to_load: VecDeque<(TileCoordinate, u32)>,
     loading_tiles: Vec<LoadingTile>,
@@ -246,7 +252,11 @@ pub(crate) struct TileAtlasState {
 }
 
 impl TileAtlasState {
-    fn new(atlas_size: u32, existing_tiles: HashSet<TileCoordinate>) -> Self {
+    fn new(
+        atlas_size: u32,
+        existing_tiles: HashSet<TileCoordinate>,
+        supports_all_tiles: bool,
+    ) -> Self {
         let unused_tiles = (0..atlas_size)
             .map(|atlas_index| AtlasTile::new(TileCoordinate::INVALID, atlas_index))
             .collect();
@@ -255,6 +265,7 @@ impl TileAtlasState {
             tile_states: default(),
             unused_tiles,
             existing_tiles,
+            supports_all_tiles,
             to_save: default(),
             to_load: default(),
             loading_tiles: default(),
@@ -331,11 +342,13 @@ impl TileAtlasState {
                         });
                         attachment.data[atlas_index as usize] = data;
                     }
+                    trace!("loaded tile {coord} into atlas slot {atlas_index}");
                     self.loaded_tile(coord);
                 }
-                Err(_) => {
+                Err(e) => {
                     // Tile remains in `Loading` state; renderer continues to fall
                     // back to the parent LOD. Slot was returned above.
+                    warn!("tile load failed for {coord}: {e}");
                 }
             }
         }
@@ -404,8 +417,18 @@ impl TileAtlasState {
     }
 
     fn request_tile(&mut self, tile_coordinate: TileCoordinate) {
-        if !self.existing_tiles.contains(&tile_coordinate) {
+        // Disk providers gate requests on `existing_tiles` (populated from
+        // `config.tc`) to avoid chasing missing files; synthesised providers
+        // set `supports_all_tiles` and skip the gate so any coordinate the
+        // tile tree asks for gets queued.
+        if !self.supports_all_tiles && !self.existing_tiles.contains(&tile_coordinate) {
             return;
+        }
+        // Insert into `existing_tiles` so the (otherwise disk-oriented)
+        // `get_tile` lookup and `save_tile_config` enumeration both see the
+        // synthesised tiles too.
+        if self.supports_all_tiles {
+            self.existing_tiles.insert(tile_coordinate);
         }
 
         let mut tile_states = mem::take(&mut self.tile_states);
@@ -432,6 +455,7 @@ impl TileAtlasState {
                 },
             );
 
+            trace!("queueing tile load: {tile_coordinate} -> atlas slot {atlas_index}");
             self.to_load.push_back((tile_coordinate, atlas_index));
         }
 
@@ -439,7 +463,9 @@ impl TileAtlasState {
     }
 
     fn release_tile(&mut self, tile_coordinate: TileCoordinate) {
-        if !self.existing_tiles.contains(&tile_coordinate) {
+        // Same gate as `request_tile`: skip if the disk-mode gate is engaged
+        // and this coord was never registered.
+        if !self.supports_all_tiles && !self.existing_tiles.contains(&tile_coordinate) {
             return;
         }
 
@@ -541,8 +567,9 @@ impl TileAtlas {
             .collect_vec();
 
         let existing_tiles = Self::load_tile_config(&config.path);
+        let supports_all_tiles = provider.supports_all_tiles();
 
-        let state = TileAtlasState::new(config.atlas_size, existing_tiles);
+        let state = TileAtlasState::new(config.atlas_size, existing_tiles, supports_all_tiles);
 
         Self {
             model: config.model.clone(),
