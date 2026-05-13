@@ -60,7 +60,7 @@ impl GpuTileTree {
     ) {
         for (&(terrain, view), tile_tree) in tile_trees.iter() {
             if gpu_tile_trees.contains_key(&(terrain, view)) {
-                return;
+                continue;
             }
 
             gpu_tile_trees.insert((terrain, view), GpuTileTree::new(&device, tile_tree));

@@ -218,7 +218,7 @@ impl TerrainViewData {
     ) {
         for (&(terrain, view), tile_tree) in tile_trees.iter() {
             if terrain_view_data.contains_key(&(terrain, view)) {
-                return;
+                continue;
             }
 
             let gpu_tile_tree = gpu_tile_trees.get(&(terrain, view)).unwrap();
